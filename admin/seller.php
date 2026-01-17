@@ -1,3 +1,11 @@
+<?php
+session_start();
+
+if (!isset($_SESSION['user_id']) || $_SESSION['user_role'] !== 'admin') {
+    header("Location: ../index.php");
+    exit;
+}
+?>
 
 
 
@@ -81,7 +89,7 @@
     <div class="dashboard_sidebar">
         <h2>Admin Panel</h2>
         <ul>
-            <li><a href="#">Add Product</a></li>
+            <li><a href="addProduct.php">Add Product</a></li>
             <li><a href="#">View Orders</a></li>
             <li><a href="#">Feedback</a></li>
             <li><a href="#">Promotion</a></li>

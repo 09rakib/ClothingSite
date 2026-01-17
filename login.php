@@ -1,5 +1,7 @@
 <?php
+session_start();
 include "db.php";
+
 $error_message = "";
 
 if (isset($_POST['submit'])) {
@@ -10,27 +12,36 @@ if (isset($_POST['submit'])) {
     $sql = "SELECT * FROM users WHERE email = '$email'";
     $result = mysqli_query($conn, $sql);
 
-    if (mysqli_num_rows($result) > 0) {
+    if (mysqli_num_rows($result) === 1) {
+
         $row = mysqli_fetch_assoc($result);
 
-        if ($row['password'] == $password) {
-            $_SESSION['user_id'] = $row['id'];
+        if ($row['password'] === $password) {
+
+            // ✅ SET SESSION PROPERLY
+            $_SESSION['user_id']   = $row['id'];
             $_SESSION['user_name'] = $row['name'];
             $_SESSION['user_role'] = $row['role'];
-            if($_SESSION['user_role']=="admin"){
-                header("location: admin/seller.php");
+
+            // ✅ ADMIN REDIRECT
+            if ($row['role'] === 'admin') {
+                header("Location: admin/seller.php");
+                exit;
+            } else {
+                header("Location: index.php");
+                exit;
             }
-            else{
-                header("location: in.php");
-            }
+
         } else {
             $error_message = "Wrong password";
         }
+
     } else {
         $error_message = "User not found. Please register first.";
     }
 }
 ?>
+
 
 
 <!DOCTYPE html>
