@@ -193,7 +193,7 @@ th{
                     <img src="../image/<?php echo $row['image']; ?>" class="product-img">
                     </td>
                     <td><?php echo $row['category_id'] ?></td>
-                    <td><a class="update" href="#">update</a></td>
+                    <td><a class="update" href="updateproduct.php?product_id=<?php echo $row['id']?>">update</a></td>
                     <td><a class="delete" href="deleteproduct.php?product_id=<?php echo $row['id'] ?>">delete</a></td>
                 </tr>
                 <?php }?>
