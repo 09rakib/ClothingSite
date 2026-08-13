@@ -1,11 +1,25 @@
 <?php
+
+declare(strict_types=1);
+
+/**
+ * Home page — hero plus a small preview of the newest products.
+ */
+
 $pageTitle = 'Home';
 require_once __DIR__ . '/includes/header.php';
 
-/* Show a small preview of featured products on the home page */
-$stmt = $conn->prepare('SELECT id, name, description, price, stock, image FROM products ORDER BY created_at DESC LIMIT 3');
-$stmt->execute();
-$result = $stmt->get_result();
+use App\Catalog\ProductRepository;
+use App\Orders\PaymentMethod;
+use App\Support\Auth;
+use App\Support\Config;
+use App\Support\Csrf;
+use App\Support\OneTimeToken;
+use App\Support\View;
+
+$featured          = (new ProductRepository())->latestActive(3);
+$lowStockThreshold = (int) Config::get('catalog.low_stock_threshold', 5);
+$canBuy            = Auth::check() && Auth::isCustomer();
 ?>
 
 <section class="hero">
@@ -18,35 +32,50 @@ $result = $stmt->get_result();
     <h2 class="page-heading">Featured Products</h2>
     <p class="page-subheading">A few of our customer favorites</p>
 
-    <div class="product-grid">
-        <?php while ($row = $result->fetch_assoc()): ?>
-            <div class="product-card">
-                <img src="assets/images/products/<?php echo htmlspecialchars($row['image']); ?>" alt="<?php echo htmlspecialchars($row['name']); ?>">
-                <div class="product-body">
-                    <h3><?php echo htmlspecialchars($row['name']); ?></h3>
-                    <p class="product-desc"><?php echo htmlspecialchars($row['description']); ?></p>
-                    <div class="product-meta">
-                        <span class="product-price">&#2547; <?php echo number_format($row['price'], 2); ?></span>
-                        <span class="stock-badge <?php echo $row['stock'] < 5 ? 'low' : ''; ?>">
-                            <?php echo $row['stock'] > 0 ? $row['stock'] . ' in stock' : 'Out of stock'; ?>
-                        </span>
+    <?php if ($featured === []): ?>
+        <div class="empty-state">No products available right now. Please check back later.</div>
+    <?php else: ?>
+        <div class="product-grid">
+            <?php foreach ($featured as $row): ?>
+                <?php $stock = (int) $row['stock']; ?>
+                <div class="product-card">
+                    <img src="assets/images/products/<?= View::e($row['image']) ?>"
+                         alt="<?= View::e($row['name']) ?>" loading="lazy">
+                    <div class="product-body">
+                        <h3><?= View::e($row['name']) ?></h3>
+                        <p class="product-desc"><?= View::e($row['description']) ?></p>
+                        <div class="product-meta">
+                            <span class="product-price"><?= View::money($row['price']) ?></span>
+                            <span class="stock-badge <?= $stock > 0 && $stock < $lowStockThreshold ? 'low' : '' ?>">
+                                <?= $stock > 0 ? $stock . ' in stock' : 'Out of stock' ?>
+                            </span>
+                        </div>
+
+                        <?php if ($canBuy && $stock > 0): ?>
+                            <form method="post" action="singleorder.php" class="buy-form">
+                                <?= Csrf::field() ?>
+                                <?= OneTimeToken::field('place_order') ?>
+                                <input type="hidden" name="product_id" value="<?= (int) $row['id'] ?>">
+                                <input type="hidden" name="quantity" value="1">
+                                <input type="hidden" name="payment_method" value="<?= View::e(PaymentMethod::default()) ?>">
+                                <button type="submit" class="btn btn-block">Buy Now</button>
+                            </form>
+                        <?php elseif ($canBuy): ?>
+                            <span class="btn btn-block btn-disabled" aria-disabled="true">Out of Stock</span>
+                        <?php elseif (Auth::check()): ?>
+                            <span class="btn btn-block btn-disabled" aria-disabled="true">Admin View</span>
+                        <?php else: ?>
+                            <a href="login.php" class="btn btn-block">Login to Buy</a>
+                        <?php endif; ?>
                     </div>
-                    <?php if (isset($_SESSION['user_id'])): ?>
-                        <a href="singleorder.php?product_id=<?php echo (int) $row['id']; ?>" class="btn btn-block">Buy Now</a>
-                    <?php else: ?>
-                        <a href="login.php" class="btn btn-block">Login to Buy</a>
-                    <?php endif; ?>
                 </div>
-            </div>
-        <?php endwhile; ?>
-    </div>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
 
     <p class="text-center mt-16">
         <a href="shop.php" class="btn">View Full Shop</a>
     </p>
 </div>
 
-<?php
-$stmt->close();
-require_once __DIR__ . '/includes/footer.php';
-?>
+<?php require_once __DIR__ . '/includes/footer.php'; ?>

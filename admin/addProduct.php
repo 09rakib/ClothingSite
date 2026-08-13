@@ -1,39 +1,88 @@
 <?php
+
+declare(strict_types=1);
+
+/**
+ * Admin — create a product.
+ *
+ * Upload handling moved to ImageUploader, which verifies the real MIME type
+ * from file content and generates the stored filename server-side. The old
+ * code trusted `$_FILES['image']['name']` and the client-side `accept`
+ * attribute (PROJECT_RULES.md §19 "Upload security").
+ */
+
 $pageTitle = 'Add Product';
 require_once __DIR__ . '/../includes/admin-header.php';
 
-$success = '';
-$error = '';
+use App\Catalog\CategoryRepository;
+use App\Catalog\ProductRepository;
+use App\Support\Csrf;
+use App\Support\Flash;
+use App\Support\Http;
+use App\Support\ImageUploader;
+use App\Support\Logger;
+use App\Support\Validator;
+use App\Support\View;
 
-$categories = $conn->query('SELECT id, name FROM categories ORDER BY name');
+$categoryRepo = new CategoryRepository();
+$productRepo  = new ProductRepository();
+$categories   = $categoryRepo->all();
 
-if (isset($_POST['submit'])) {
-    $name        = trim($_POST['name'] ?? '');
-    $description = trim($_POST['description'] ?? '');
-    $price       = $_POST['price'] ?? '';
-    $stock       = $_POST['stock'] ?? '';
-    $category_id = $_POST['category_id'] ?? '';
+$errors = [];
+$old    = ['name' => '', 'description' => '', 'price' => '', 'stock' => '', 'category_id' => ''];
 
-    if ($name === '' || $description === '' || $price === '' || $stock === '' || $category_id === '' || empty($_FILES['image']['name'])) {
-        $error = 'All fields, including an image, are required.';
-    } else {
-        $imageName = time() . '_' . preg_replace('/[^A-Za-z0-9._-]/', '', basename($_FILES['image']['name']));
-        $uploadPath = __DIR__ . '/../assets/images/products/' . $imageName;
+if (Http::isPost()) {
+    Csrf::verifyRequest();
 
-        if (move_uploaded_file($_FILES['image']['tmp_name'], $uploadPath)) {
-            $stmt = $conn->prepare('INSERT INTO products (name, description, price, stock, image, category_id) VALUES (?, ?, ?, ?, ?, ?)');
-            $stmt->bind_param('ssdisi', $name, $description, $price, $stock, $imageName, $category_id);
+    $validator = (new Validator($_POST))
+        ->label('name', 'Product name')
+        ->label('description', 'Description')
+        ->label('price', 'Price')
+        ->label('stock', 'Stock')
+        ->label('category_id', 'Category')
+        ->required('name')->maxLength('name', 120)
+        ->required('description')->maxLength('description', 500)
+        ->required('price')->decimal('price', 0, 99999999)
+        ->required('stock')->integer('stock', 0, 1000000)
+        ->required('category_id')->inList('category_id', $categoryRepo->validIds());
 
-            if ($stmt->execute()) {
-                $success = 'Product added successfully!';
-            } else {
-                $error = 'Could not save the product. Please try again.';
-            }
-            $stmt->close();
-        } else {
-            $error = 'Image upload failed. Please try again.';
+    foreach (array_keys($old) as $field) {
+        $old[$field] = $validator->value($field);
+    }
+
+    if (!ImageUploader::wasProvided($_FILES['image'] ?? null)) {
+        $validator->fail('image', 'A product image is required.');
+    }
+
+    if ($validator->passes()) {
+        try {
+            // Store the image first: if it is rejected, no half-created
+            // product row is left behind.
+            $imageName = ImageUploader::store($_FILES['image']);
+
+            $productRepo->create(
+                $validator->value('name'),
+                $validator->value('description'),
+                $validator->value('price'),
+                (int) $validator->value('stock'),
+                $imageName,
+                (int) $validator->value('category_id')
+            );
+
+            Logger::info('Product created', ['name' => $validator->value('name')]);
+
+            // POST/Redirect/GET so a refresh cannot create a second product.
+            Flash::success('Product added successfully.');
+            Http::redirect('displayproduct.php');
+        } catch (RuntimeException $e) {
+            $validator->fail('image', $e->getMessage());
+        } catch (Throwable $e) {
+            Logger::error('Product creation failed', ['error' => $e->getMessage()]);
+            $validator->fail('name', 'Could not save the product. Please try again.');
         }
     }
+
+    $errors = $validator->errors();
 }
 ?>
 
@@ -41,44 +90,49 @@ if (isset($_POST['submit'])) {
 <p class="page-subheading">Create a new product listing</p>
 
 <div class="admin-card">
-    <?php if ($success !== ''): ?>
-        <div class="alert alert-success"><?php echo htmlspecialchars($success); ?></div>
-    <?php endif; ?>
-    <?php if ($error !== ''): ?>
-        <div class="alert alert-error"><?php echo htmlspecialchars($error); ?></div>
+    <?php if ($errors !== []): ?>
+        <div class="alert alert-error" role="alert">
+            <?php foreach ($errors as $message): ?>
+                <div><?= View::e($message) ?></div>
+            <?php endforeach; ?>
+        </div>
     <?php endif; ?>
 
-    <form method="post" enctype="multipart/form-data" id="productForm">
+    <form method="post" enctype="multipart/form-data" novalidate>
+        <?= Csrf::field() ?>
         <div class="form-group">
             <label for="name">Product Name</label>
-            <input type="text" name="name" id="name" required>
+            <input type="text" name="name" id="name" value="<?= View::e($old['name']) ?>" maxlength="120" required>
         </div>
         <div class="form-group">
             <label for="description">Description</label>
-            <textarea name="description" id="description" required></textarea>
+            <textarea name="description" id="description" maxlength="500" required><?= View::e($old['description']) ?></textarea>
         </div>
         <div class="form-group">
             <label for="price">Price (&#2547;)</label>
-            <input type="number" step="0.01" min="0" name="price" id="price" required>
+            <input type="number" step="0.01" min="0" name="price" id="price" value="<?= View::e($old['price']) ?>" required>
         </div>
         <div class="form-group">
             <label for="stock">Stock</label>
-            <input type="number" min="0" name="stock" id="stock" required>
+            <input type="number" min="0" name="stock" id="stock" value="<?= View::e($old['stock']) ?>" required>
         </div>
         <div class="form-group">
             <label for="image">Product Image</label>
-            <input type="file" name="image" id="image" accept="image/*" required>
+            <input type="file" name="image" id="image" accept="image/jpeg,image/png,image/gif,image/webp" required>
+            <small class="form-hint">JPG, PNG, GIF or WebP. Maximum 2&nbsp;MB.</small>
         </div>
         <div class="form-group">
             <label for="category_id">Category</label>
             <select name="category_id" id="category_id" required>
                 <option value="">Select Category</option>
-                <?php while ($row = $categories->fetch_assoc()): ?>
-                    <option value="<?php echo (int) $row['id']; ?>"><?php echo htmlspecialchars($row['name']); ?></option>
-                <?php endwhile; ?>
+                <?php foreach ($categories as $category): ?>
+                    <option value="<?= (int) $category['id'] ?>" <?= $old['category_id'] === (string) $category['id'] ? 'selected' : '' ?>>
+                        <?= View::e($category['name']) ?>
+                    </option>
+                <?php endforeach; ?>
             </select>
         </div>
-        <button type="submit" name="submit" class="btn btn-block">Add Product</button>
+        <button type="submit" class="btn btn-block">Add Product</button>
     </form>
 </div>
 

@@ -1,20 +1,30 @@
 <?php
+
 /**
- * Shared admin header: starts the session, connects to the DB,
- * blocks non-admins, and renders the sidebar. Include this as the
- * first thing on any file inside /admin, after setting $pageTitle.
+ * Shared admin header.
+ *
+ * Boots the application, enforces the admin role on the server, then renders
+ * the sidebar. Include this as the first thing in any file under /admin, after
+ * setting $pageTitle.
+ *
+ * The authorization check is delegated to Auth::requireAdmin() so there is a
+ * single definition of "is an admin" — the old code duplicated this test in
+ * deleteproduct.php, where it could have drifted out of sync.
  */
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-require_once __DIR__ . '/db.php';
 
-if (!isset($_SESSION['user_id']) || $_SESSION['user_role'] !== 'admin') {
-    header('Location: ../login.php');
-    exit;
-}
+require_once __DIR__ . '/../src/bootstrap.php';
 
-$pageTitle = $pageTitle ?? 'Admin';
+use App\Support\Auth;
+use App\Support\Csrf;
+use App\Support\Database;
+use App\Support\Flash;
+use App\Support\View;
+
+Auth::requireAdmin();
+
+$conn = Database::connection();
+
+$pageTitle   = $pageTitle ?? 'Admin';
 $currentPage = basename($_SERVER['PHP_SELF']);
 ?>
 <!DOCTYPE html>
@@ -22,7 +32,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title><?php echo htmlspecialchars($pageTitle); ?> | Seller Panel</title>
+<title><?= View::e($pageTitle) ?> | Seller Panel</title>
 <link rel="stylesheet" href="../assets/css/style.css">
 </head>
 <body>
@@ -31,12 +41,18 @@ $currentPage = basename($_SERVER['PHP_SELF']);
     <aside class="admin-sidebar">
         <h2>Seller Panel</h2>
         <ul>
-            <li><a href="seller.php" class="<?php echo $currentPage === 'seller.php' ? 'active' : ''; ?>">Dashboard</a></li>
-            <li><a href="addProduct.php" class="<?php echo $currentPage === 'addProduct.php' ? 'active' : ''; ?>">Add Product</a></li>
-            <li><a href="displayproduct.php" class="<?php echo in_array($currentPage, ['displayproduct.php', 'updateproduct.php']) ? 'active' : ''; ?>">View Products</a></li>
+            <li><a href="seller.php" class="<?= $currentPage === 'seller.php' ? 'active' : '' ?>">Dashboard</a></li>
+            <li><a href="addProduct.php" class="<?= $currentPage === 'addProduct.php' ? 'active' : '' ?>">Add Product</a></li>
+            <li><a href="displayproduct.php" class="<?= in_array($currentPage, ['displayproduct.php', 'updateproduct.php'], true) ? 'active' : '' ?>">View Products</a></li>
             <li><a href="../index.php">Visit Store</a></li>
-            <li><a href="../logout.php">Logout</a></li>
+            <li>
+                <form method="post" action="../logout.php" class="nav-inline-form">
+                    <?= Csrf::field() ?>
+                    <button type="submit" class="nav-link-button">Logout</button>
+                </form>
+            </li>
         </ul>
     </aside>
 
     <main class="admin-main">
+    <?= Flash::render() ?>

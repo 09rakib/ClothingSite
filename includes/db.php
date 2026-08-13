@@ -1,24 +1,18 @@
 <?php
+
 /**
- * Database connection.
- * mysqli is set to throw exceptions on error instead of failing silently,
- * and the connection charset is fixed to utf8mb4 so names/descriptions
- * with special characters (Bangla, emoji, etc.) store correctly.
+ * BACKWARD-COMPATIBILITY SHIM.
  *
- * Update the credentials below to match your local MySQL setup.
+ * Database credentials and connection handling now live in
+ * config/config.php and src/Support/Database.php. This file remains only so
+ * that any page still doing `require_once 'includes/db.php'` and using `$conn`
+ * keeps working during the incremental refactor (PROJECT_RULES.md Rule 2 —
+ * prefer incremental, testable refactoring over a big-bang rewrite).
+ *
+ * New code should use App\Support\Database::connection() directly, or better,
+ * a repository from src/Catalog or src/Orders.
  */
 
-mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+require_once __DIR__ . '/../src/bootstrap.php';
 
-define('DB_HOST', 'localhost');
-define('DB_USER', 'root');
-define('DB_PASS', '');
-define('DB_NAME', 'onlineshopdb');
-
-try {
-    $conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
-    $conn->set_charset('utf8mb4');
-} catch (mysqli_sql_exception $e) {
-    http_response_code(500);
-    die('Database connection failed. Please make sure MySQL is running and "onlineshopdb" has been imported from database.sql.');
-}
+$conn = App\Support\Database::connection();
