@@ -902,15 +902,37 @@ Recorded here so the gaps are known rather than forgotten:
 
 ## Phase 1 --- Catalog Foundation
 
--   [ ] Categories.
--   [ ] Product search.
--   [ ] Category filter.
--   [ ] Sorting.
--   [ ] Pagination.
--   [ ] Multiple images.
--   [ ] Product slugs.
--   [ ] Product archive/soft delete.
--   [ ] Configurable low-stock threshold.
+**STATUS: COMPLETE (2026-08-14)**
+
+-   [x] Categories. --- Admin CRUD at `admin/categories.php`. Deleting a
+    category leaves its products on sale and uncategorised
+    (`ON DELETE SET NULL`), and the confirmation states how many are affected.
+-   [x] Product search. --- Server-side, LIKE wildcards escaped.
+-   [x] Category filter.
+-   [x] Sorting. --- Whitelisted keys mapped to SQL; an unknown key falls back
+    to the default rather than reaching the query.
+-   [x] Pagination.
+-   [x] Multiple images. --- `product_images` table with one primary image;
+    managed at `admin/productimages.php`. `products.image` is kept as a
+    denormalised cache of the primary so list views need no join.
+-   [x] Product slugs. --- `App\Support\Slugger`; unique per table, stable
+    across edits that do not change the name. `?product_id=` redirects 301 to
+    the canonical slug URL.
+-   [x] Product archive/soft delete. --- Delivered in Phase 0.
+-   [x] Configurable low-stock threshold. --- Store-wide default in config,
+    with an optional per-product override (`products.low_stock_threshold`,
+    NULL meaning "use the default").
+
+Also delivered: a public product detail page (`product.php?slug=…`) with
+gallery, breadcrumb, stock state, related products and SEO meta tags — §26
+asks for this and there was previously no product page at all.
+
+### Deferred from Phase 1
+
+-   Renaming a product changes its URL; there is no redirect table mapping the
+    old slug to the new one. Worth adding with the rest of the SEO work (§26).
+-   `product_images.sort_order` exists and is respected on read, but there is
+    no drag-to-reorder UI yet.
 
 ## Phase 2 --- Cart
 

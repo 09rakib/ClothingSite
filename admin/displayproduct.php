@@ -72,6 +72,7 @@ $lowStockThreshold = (int) Config::get('catalog.low_stock_threshold', 5);
                         </td>
                         <td class="actions-cell">
                             <a href="updateproduct.php?product_id=<?= (int) $row['id'] ?>" class="btn btn-sm btn-success">Update</a>
+                            <a href="productimages.php?product_id=<?= (int) $row['id'] ?>" class="btn btn-sm">Images (<?= (int) $row['image_count'] ?>)</a>
 
                             <?php if ($isArchived): ?>
                                 <form method="post" action="deleteproduct.php" class="inline-form">

@@ -12,14 +12,12 @@ require_once __DIR__ . '/includes/header.php';
 use App\Catalog\ProductRepository;
 use App\Orders\PaymentMethod;
 use App\Support\Auth;
-use App\Support\Config;
 use App\Support\Csrf;
 use App\Support\OneTimeToken;
 use App\Support\View;
 
-$featured          = (new ProductRepository())->latestActive(3);
-$lowStockThreshold = (int) Config::get('catalog.low_stock_threshold', 5);
-$canBuy            = Auth::check() && Auth::isCustomer();
+$featured = (new ProductRepository())->latestActive(3);
+$canBuy   = Auth::check() && Auth::isCustomer();
 ?>
 
 <section class="hero">
@@ -38,15 +36,21 @@ $canBuy            = Auth::check() && Auth::isCustomer();
         <div class="product-grid">
             <?php foreach ($featured as $row): ?>
                 <?php $stock = (int) $row['stock']; ?>
+                <?php
+                $threshold = ProductRepository::lowStockThresholdFor($row);
+                $detailUrl = 'product.php?slug=' . urlencode((string) $row['slug']);
+                ?>
                 <div class="product-card">
-                    <img src="assets/images/products/<?= View::e($row['image']) ?>"
-                         alt="<?= View::e($row['name']) ?>" loading="lazy">
+                    <a href="<?= View::e($detailUrl) ?>" class="product-card-link">
+                        <img src="assets/images/products/<?= View::e($row['image']) ?>"
+                             alt="<?= View::e($row['name']) ?>" loading="lazy">
+                    </a>
                     <div class="product-body">
-                        <h3><?= View::e($row['name']) ?></h3>
+                        <h3><a href="<?= View::e($detailUrl) ?>"><?= View::e($row['name']) ?></a></h3>
                         <p class="product-desc"><?= View::e($row['description']) ?></p>
                         <div class="product-meta">
                             <span class="product-price"><?= View::money($row['price']) ?></span>
-                            <span class="stock-badge <?= $stock > 0 && $stock < $lowStockThreshold ? 'low' : '' ?>">
+                            <span class="stock-badge <?= $stock > 0 && $stock < $threshold ? 'low' : '' ?>">
                                 <?= $stock > 0 ? $stock . ' in stock' : 'Out of stock' ?>
                             </span>
                         </div>

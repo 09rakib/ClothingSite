@@ -17,6 +17,7 @@ $pageTitle = 'Update Product';
 require_once __DIR__ . '/../includes/admin-header.php';
 
 use App\Catalog\CategoryRepository;
+use App\Catalog\ProductImageRepository;
 use App\Catalog\ProductRepository;
 use App\Support\Csrf;
 use App\Support\Flash;
@@ -48,11 +49,13 @@ $categories = $categoryRepo->all();
 $errors     = [];
 
 $old = [
-    'name'        => (string) $product['name'],
-    'description' => (string) $product['description'],
-    'price'       => (string) $product['price'],
-    'stock'       => (string) $product['stock'],
-    'category_id' => (string) ($product['category_id'] ?? ''),
+    'name'                => (string) $product['name'],
+    'sku'                 => (string) ($product['sku'] ?? ''),
+    'description'         => (string) $product['description'],
+    'price'               => (string) $product['price'],
+    'stock'               => (string) $product['stock'],
+    'low_stock_threshold' => (string) ($product['low_stock_threshold'] ?? ''),
+    'category_id'         => (string) ($product['category_id'] ?? ''),
 ];
 
 if (Http::isPost()) {
@@ -60,14 +63,18 @@ if (Http::isPost()) {
 
     $validator = (new Validator($_POST))
         ->label('name', 'Product name')
+        ->label('sku', 'SKU')
         ->label('description', 'Description')
         ->label('price', 'Price')
         ->label('stock', 'Stock')
+        ->label('low_stock_threshold', 'Low stock alert')
         ->label('category_id', 'Category')
         ->required('name')->maxLength('name', 120)
+        ->maxLength('sku', 60)
         ->required('description')->maxLength('description', 500)
         ->required('price')->decimal('price', 0, 99999999)
         ->required('stock')->integer('stock', 0, 1000000)
+        ->integer('low_stock_threshold', 0, 1000000)
         ->required('category_id')->inList('category_id', $categoryRepo->validIds());
 
     foreach (array_keys($old) as $field) {
@@ -92,14 +99,25 @@ if (Http::isPost()) {
                 $validator->value('price'),
                 (int) $validator->value('stock'),
                 $imageName,
-                (int) $validator->value('category_id')
+                (int) $validator->value('category_id'),
+                $validator->value('sku') ?: null,
+                $validator->value('low_stock_threshold') === ''
+                    ? null
+                    : (int) $validator->value('low_stock_threshold')
             );
 
-            // Remove the superseded file only after the row is safely updated,
-            // so a failed update never leaves a product pointing at a
-            // deleted image.
+            // A replacement image becomes the new primary in the gallery too,
+            // so the gallery and products.image never disagree.
             if ($previousImg !== null && $previousImg !== $imageName) {
-                ImageUploader::delete($previousImg);
+                $images   = new ProductImageRepository();
+                $newImage = $images->add($productId, $imageName, null, true);
+
+                // Drop the old gallery row for the file being replaced.
+                foreach ($images->forProduct($productId) as $galleryImage) {
+                    if ($galleryImage['filename'] === $previousImg && $galleryImage['id'] !== $newImage) {
+                        $images->delete($galleryImage['id']);
+                    }
+                }
             }
 
             Logger::info('Product updated', ['product_id' => $productId]);
@@ -142,6 +160,10 @@ if (Http::isPost()) {
             <input type="text" name="name" id="name" value="<?= View::e($old['name']) ?>" maxlength="120" required>
         </div>
         <div class="form-group">
+            <label for="sku">SKU <span class="optional">(optional)</span></label>
+            <input type="text" name="sku" id="sku" value="<?= View::e($old['sku']) ?>" maxlength="60">
+        </div>
+        <div class="form-group">
             <label for="description">Description</label>
             <textarea name="description" id="description" maxlength="500" required><?= View::e($old['description']) ?></textarea>
         </div>
@@ -154,11 +176,21 @@ if (Http::isPost()) {
             <input type="number" min="0" name="stock" id="stock" value="<?= View::e($old['stock']) ?>" required>
         </div>
         <div class="form-group">
-            <label for="image">Current Image</label><br>
+            <label for="low_stock_threshold">Low stock alert <span class="optional">(optional)</span></label>
+            <input type="number" min="0" name="low_stock_threshold" id="low_stock_threshold"
+                   value="<?= View::e($old['low_stock_threshold']) ?>"
+                   placeholder="<?= (int) App\Support\Config::get('catalog.low_stock_threshold', 5) ?>">
+            <small class="form-hint">Leave empty to use the store default (<?= (int) App\Support\Config::get('catalog.low_stock_threshold', 5) ?>).</small>
+        </div>
+        <div class="form-group">
+            <label for="image">Primary Image</label><br>
             <img src="../assets/images/products/<?= View::e($product['image']) ?>" width="80"
                  alt="<?= View::e($product['name']) ?>" style="border-radius:6px; margin-bottom:8px;">
             <input type="file" name="image" id="image" accept="image/jpeg,image/png,image/gif,image/webp">
-            <small class="form-hint">Leave empty to keep the current image. JPG, PNG, GIF or WebP, max 2&nbsp;MB.</small>
+            <small class="form-hint">
+                Leave empty to keep the current image. JPG, PNG, GIF or WebP, max 2&nbsp;MB.
+                <a href="productimages.php?product_id=<?= (int) $productId ?>">Manage the full gallery</a>.
+            </small>
         </div>
         <div class="form-group">
             <label for="category_id">Category</label>

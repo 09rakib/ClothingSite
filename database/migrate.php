@@ -11,6 +11,9 @@ declare(strict_types=1);
  * without losing data. Migrations are numbered, applied once, and recorded in a
  * `migrations` table so running this script is safe and repeatable.
  *
+ * The apply logic itself lives in App\Support\Migrator so that the test
+ * bootstrap builds its schema from exactly the same code path.
+ *
  * Usage:
  *   php database/migrate.php            Apply all pending migrations
  *   php database/migrate.php --status   Show applied/pending without changing anything
@@ -21,6 +24,7 @@ require_once __DIR__ . '/../src/bootstrap.php';
 
 use App\Support\Config;
 use App\Support\Database;
+use App\Support\Migrator;
 
 if (PHP_SAPI !== 'cli') {
     http_response_code(403);
@@ -30,8 +34,6 @@ if (PHP_SAPI !== 'cli') {
 $options    = $argv ?? [];
 $statusOnly = in_array('--status', $options, true);
 $doBackup   = in_array('--backup', $options, true);
-
-$migrationsDir = __DIR__ . '/migrations';
 
 /**
  * Ensure the target database exists before connecting to it, so a brand-new
@@ -73,14 +75,13 @@ function backupDatabase(): void
         $mysqldump = 'mysqldump';
     }
 
-    $user = (string) Config::require('database.user');
     $pass = (string) Config::get('database.pass', '');
 
     $command = sprintf(
         '"%s" -h %s -u %s %s %s --routines --single-transaction --result-file="%s"',
         $mysqldump,
         escapeshellarg((string) Config::require('database.host')),
-        escapeshellarg($user),
+        escapeshellarg((string) Config::require('database.user')),
         $pass !== '' ? '-p' . escapeshellarg($pass) : '',
         escapeshellarg($name),
         $outFile
@@ -98,36 +99,21 @@ function backupDatabase(): void
 
 ensureDatabaseExists();
 
-$conn = Database::connection();
+$conn     = Database::connection();
+$migrator = new Migrator(__DIR__ . '/migrations');
 
-// Ledger of applied migrations.
-$conn->query(
-    'CREATE TABLE IF NOT EXISTS migrations (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        migration VARCHAR(255) NOT NULL UNIQUE,
-        applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB'
-);
-
-$applied = [];
-$rows    = $conn->query('SELECT migration FROM migrations ORDER BY migration');
-while ($row = $rows->fetch_assoc()) {
-    $applied[$row['migration']] = true;
-}
-
-$files = glob($migrationsDir . '/*.sql') ?: [];
-sort($files, SORT_STRING);
-
-$pending = array_values(array_filter(
-    $files,
-    static fn(string $file): bool => !isset($applied[basename($file)])
-));
+$applied = $migrator->applied($conn);
+$pending = $migrator->pending($conn);
 
 if ($statusOnly) {
     echo "Applied migrations:\n";
+    if ($applied === []) {
+        echo "  (none)\n";
+    }
     foreach (array_keys($applied) as $migration) {
         echo "  [x] {$migration}\n";
     }
+
     echo "\nPending migrations:\n";
     if ($pending === []) {
         echo "  (none)\n";
@@ -150,45 +136,15 @@ if ($doBackup) {
     backupDatabase();
 }
 
-$record = $conn->prepare('INSERT INTO migrations (migration) VALUES (?)');
-
-foreach ($pending as $file) {
-    $name = basename($file);
-    $sql  = file_get_contents($file);
-
-    if ($sql === false || trim($sql) === '') {
-        echo "  SKIP {$name} (empty)\n";
-        continue;
-    }
-
-    echo "  Applying {$name}... ";
-
-    try {
-        // multi_query lets one migration file contain several statements.
-        $conn->multi_query($sql);
-        do {
-            if ($result = $conn->store_result()) {
-                $result->free();
-            }
-        } while ($conn->more_results() && $conn->next_result());
-
-        // Surface an error raised by any statement after the first.
-        if ($conn->errno !== 0) {
-            throw new mysqli_sql_exception($conn->error, $conn->errno);
-        }
-
-        $record->bind_param('s', $name);
-        $record->execute();
-
-        echo "done\n";
-    } catch (Throwable $e) {
-        echo "FAILED\n";
-        echo "  Error: " . $e->getMessage() . "\n";
-        echo "  Migration {$name} was not recorded. Fix the SQL and re-run.\n";
-        exit(1);
-    }
+try {
+    $migrator->migrate($conn, static function (string $name): void {
+        echo "  Applied {$name}\n";
+    });
+} catch (Throwable $e) {
+    echo "\nFAILED\n";
+    echo '  ' . $e->getMessage() . "\n";
+    echo "  The failing migration was not recorded. Fix it and re-run.\n";
+    exit(1);
 }
-
-$record->close();
 
 echo "Migrations complete.\n";

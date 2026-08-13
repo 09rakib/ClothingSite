@@ -15,6 +15,7 @@ $pageTitle = 'Add Product';
 require_once __DIR__ . '/../includes/admin-header.php';
 
 use App\Catalog\CategoryRepository;
+use App\Catalog\ProductImageRepository;
 use App\Catalog\ProductRepository;
 use App\Support\Csrf;
 use App\Support\Flash;
@@ -29,21 +30,33 @@ $productRepo  = new ProductRepository();
 $categories   = $categoryRepo->all();
 
 $errors = [];
-$old    = ['name' => '', 'description' => '', 'price' => '', 'stock' => '', 'category_id' => ''];
+$old    = [
+    'name'                => '',
+    'sku'                 => '',
+    'description'         => '',
+    'price'               => '',
+    'stock'               => '',
+    'low_stock_threshold' => '',
+    'category_id'         => '',
+];
 
 if (Http::isPost()) {
     Csrf::verifyRequest();
 
     $validator = (new Validator($_POST))
         ->label('name', 'Product name')
+        ->label('sku', 'SKU')
         ->label('description', 'Description')
         ->label('price', 'Price')
         ->label('stock', 'Stock')
+        ->label('low_stock_threshold', 'Low stock alert')
         ->label('category_id', 'Category')
         ->required('name')->maxLength('name', 120)
+        ->maxLength('sku', 60)
         ->required('description')->maxLength('description', 500)
         ->required('price')->decimal('price', 0, 99999999)
         ->required('stock')->integer('stock', 0, 1000000)
+        ->integer('low_stock_threshold', 0, 1000000)
         ->required('category_id')->inList('category_id', $categoryRepo->validIds());
 
     foreach (array_keys($old) as $field) {
@@ -60,16 +73,25 @@ if (Http::isPost()) {
             // product row is left behind.
             $imageName = ImageUploader::store($_FILES['image']);
 
-            $productRepo->create(
+            $newProductId = $productRepo->create(
                 $validator->value('name'),
                 $validator->value('description'),
                 $validator->value('price'),
                 (int) $validator->value('stock'),
                 $imageName,
-                (int) $validator->value('category_id')
+                (int) $validator->value('category_id'),
+                $validator->value('sku') ?: null,
+                // Empty means "use the store-wide default from config".
+                $validator->value('low_stock_threshold') === ''
+                    ? null
+                    : (int) $validator->value('low_stock_threshold')
             );
 
-            Logger::info('Product created', ['name' => $validator->value('name')]);
+            // Seed the gallery so the product page and the admin image manager
+            // both see this upload as the primary image.
+            (new ProductImageRepository())->add($newProductId, $imageName, null, true);
+
+            Logger::info('Product created', ['product_id' => $newProductId]);
 
             // POST/Redirect/GET so a refresh cannot create a second product.
             Flash::success('Product added successfully.');
@@ -105,6 +127,11 @@ if (Http::isPost()) {
             <input type="text" name="name" id="name" value="<?= View::e($old['name']) ?>" maxlength="120" required>
         </div>
         <div class="form-group">
+            <label for="sku">SKU <span class="optional">(optional)</span></label>
+            <input type="text" name="sku" id="sku" value="<?= View::e($old['sku']) ?>" maxlength="60">
+            <small class="form-hint">Your own stock-keeping code, shown on the product page.</small>
+        </div>
+        <div class="form-group">
             <label for="description">Description</label>
             <textarea name="description" id="description" maxlength="500" required><?= View::e($old['description']) ?></textarea>
         </div>
@@ -115,6 +142,13 @@ if (Http::isPost()) {
         <div class="form-group">
             <label for="stock">Stock</label>
             <input type="number" min="0" name="stock" id="stock" value="<?= View::e($old['stock']) ?>" required>
+        </div>
+        <div class="form-group">
+            <label for="low_stock_threshold">Low stock alert <span class="optional">(optional)</span></label>
+            <input type="number" min="0" name="low_stock_threshold" id="low_stock_threshold"
+                   value="<?= View::e($old['low_stock_threshold']) ?>"
+                   placeholder="<?= (int) App\Support\Config::get('catalog.low_stock_threshold', 5) ?>">
+            <small class="form-hint">Leave empty to use the store default (<?= (int) App\Support\Config::get('catalog.low_stock_threshold', 5) ?>).</small>
         </div>
         <div class="form-group">
             <label for="image">Product Image</label>

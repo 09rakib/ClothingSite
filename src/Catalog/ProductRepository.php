@@ -6,6 +6,7 @@ namespace App\Catalog;
 
 use App\Support\Config;
 use App\Support\Database;
+use App\Support\Slugger;
 use mysqli;
 
 /**
@@ -83,8 +84,8 @@ final class ProductRepository
         // whitelist — a user-supplied sort value never reaches the SQL.
         $orderBy = $this->orderByClause($sort);
 
-        $sql = "SELECT p.id, p.name, p.description, p.price, p.stock, p.image,
-                       p.category_id, c.name AS category_name
+        $sql = "SELECT p.id, p.name, p.slug, p.sku, p.description, p.price, p.stock, p.image,
+                       p.low_stock_threshold, p.category_id, c.name AS category_name, c.slug AS category_slug
                 FROM products p
                 LEFT JOIN categories c ON c.id = p.category_id
                 {$whereSql}
@@ -118,7 +119,7 @@ final class ProductRepository
         $limit = max(1, min($limit, 24));
 
         $stmt = $this->db->prepare(
-            "SELECT id, name, description, price, stock, image
+            "SELECT id, name, slug, description, price, stock, image, low_stock_threshold
              FROM products
              WHERE deleted_at IS NULL AND status = 'active'
              ORDER BY created_at DESC
@@ -140,7 +141,8 @@ final class ProductRepository
     public function findActive(int $id): ?array
     {
         $stmt = $this->db->prepare(
-            "SELECT id, name, description, price, stock, image, category_id
+            "SELECT id, name, slug, sku, description, price, stock, image,
+                    low_stock_threshold, category_id
              FROM products
              WHERE id = ? AND deleted_at IS NULL AND status = 'active'
              LIMIT 1"
@@ -151,6 +153,76 @@ final class ProductRepository
         $stmt->close();
 
         return $row ?: null;
+    }
+
+    /**
+     * Look a product up by its public URL slug (§11 "Use slugs for public URLs").
+     *
+     * @return array<string,mixed>|null
+     */
+    public function findActiveBySlug(string $slug): ?array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT p.id, p.name, p.slug, p.sku, p.description, p.price, p.stock, p.image,
+                    p.low_stock_threshold, p.category_id, p.created_at,
+                    c.name AS category_name, c.slug AS category_slug
+             FROM products p
+             LEFT JOIN categories c ON c.id = p.category_id
+             WHERE p.slug = ? AND p.deleted_at IS NULL AND p.status = 'active'
+             LIMIT 1"
+        );
+        $stmt->bind_param('s', $slug);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        return $row ?: null;
+    }
+
+    /**
+     * Related products from the same category, excluding the one being viewed.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public function relatedTo(int $productId, ?int $categoryId, int $limit = 4): array
+    {
+        if ($categoryId === null) {
+            return [];
+        }
+
+        $limit = max(1, min($limit, 12));
+
+        $stmt = $this->db->prepare(
+            "SELECT id, name, slug, price, stock, image
+             FROM products
+             WHERE category_id = ?
+               AND id <> ?
+               AND deleted_at IS NULL
+               AND status = 'active'
+             ORDER BY created_at DESC
+             LIMIT ?"
+        );
+        $stmt->bind_param('iii', $categoryId, $productId, $limit);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+
+        return $rows;
+    }
+
+    /**
+     * The low-stock threshold that applies to a product row: its own override
+     * when set, otherwise the store-wide default from config (Rule 5).
+     */
+    public static function lowStockThresholdFor(array $product): int
+    {
+        $override = $product['low_stock_threshold'] ?? null;
+
+        if ($override !== null && $override !== '') {
+            return (int) $override;
+        }
+
+        return (int) Config::get('catalog.low_stock_threshold', 5);
     }
 
     /**
@@ -176,8 +248,9 @@ final class ProductRepository
      */
     public function allForAdmin(bool $includeArchived = true): array
     {
-        $sql = "SELECT p.id, p.name, p.description, p.price, p.stock, p.image,
-                       p.status, p.deleted_at, c.name AS category_name
+        $sql = "SELECT p.id, p.name, p.slug, p.sku, p.description, p.price, p.stock, p.image,
+                       p.low_stock_threshold, p.status, p.deleted_at, c.name AS category_name,
+                       (SELECT COUNT(*) FROM product_images pi WHERE pi.product_id = p.id) AS image_count
                 FROM products p
                 LEFT JOIN categories c ON c.id = p.category_id";
 
@@ -196,13 +269,28 @@ final class ProductRepository
         string $price,
         int $stock,
         string $image,
-        ?int $categoryId
+        ?int $categoryId,
+        ?string $sku = null,
+        ?int $lowStockThreshold = null
     ): int {
+        $slug = Slugger::unique($this->db, $name, 'products', 'slug', null, 'product');
+
         $stmt = $this->db->prepare(
-            'INSERT INTO products (name, description, price, stock, image, category_id)
-             VALUES (?, ?, ?, ?, ?, ?)'
+            'INSERT INTO products (name, slug, sku, description, price, stock, low_stock_threshold, image, category_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
-        $stmt->bind_param('ssdisi', $name, $description, $price, $stock, $image, $categoryId);
+        $stmt->bind_param(
+            'ssssdiisi',
+            $name,
+            $slug,
+            $sku,
+            $description,
+            $price,
+            $stock,
+            $lowStockThreshold,
+            $image,
+            $categoryId
+        );
         $stmt->execute();
         $id = (int) $this->db->insert_id;
         $stmt->close();
@@ -210,6 +298,14 @@ final class ProductRepository
         return $id;
     }
 
+    /**
+     * Update a product.
+     *
+     * The slug is only regenerated when the name changes, so a product's
+     * public URL survives edits to its price, stock or description. Renaming
+     * does change the URL — acceptable here because there is no redirect table
+     * yet; that would belong with the SEO work in §26.
+     */
     public function update(
         int $id,
         string $name,
@@ -217,14 +313,36 @@ final class ProductRepository
         string $price,
         int $stock,
         string $image,
-        ?int $categoryId
+        ?int $categoryId,
+        ?string $sku = null,
+        ?int $lowStockThreshold = null
     ): void {
+        $existing = $this->find($id);
+        $slug     = (string) ($existing['slug'] ?? '');
+
+        if ($existing === null || (string) $existing['name'] !== $name || $slug === '') {
+            $slug = Slugger::unique($this->db, $name, 'products', 'slug', $id, 'product');
+        }
+
         $stmt = $this->db->prepare(
             'UPDATE products
-             SET name = ?, description = ?, price = ?, stock = ?, image = ?, category_id = ?
+             SET name = ?, slug = ?, sku = ?, description = ?, price = ?, stock = ?,
+                 low_stock_threshold = ?, image = ?, category_id = ?
              WHERE id = ?'
         );
-        $stmt->bind_param('ssdisii', $name, $description, $price, $stock, $image, $categoryId, $id);
+        $stmt->bind_param(
+            'ssssdiisii',
+            $name,
+            $slug,
+            $sku,
+            $description,
+            $price,
+            $stock,
+            $lowStockThreshold,
+            $image,
+            $categoryId,
+            $id
+        );
         $stmt->execute();
         $stmt->close();
     }
@@ -285,10 +403,12 @@ final class ProductRepository
     {
         $threshold = (int) Config::get('catalog.low_stock_threshold', 5);
 
+        // COALESCE lets a product override the store-wide threshold while
+        // everything without an override still uses the configured default.
         $stmt = $this->db->prepare(
             "SELECT
                 COUNT(*) AS total,
-                SUM(CASE WHEN stock < ? AND stock > 0 THEN 1 ELSE 0 END) AS low_stock,
+                SUM(CASE WHEN stock < COALESCE(low_stock_threshold, ?) AND stock > 0 THEN 1 ELSE 0 END) AS low_stock,
                 SUM(CASE WHEN stock = 0 THEN 1 ELSE 0 END) AS out_of_stock
              FROM products
              WHERE deleted_at IS NULL"
