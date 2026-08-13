@@ -1,50 +1,94 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
+
+declare(strict_types=1);
+
+/**
+ * Customer registration.
+ *
+ * Validation now runs through the shared Validator so the rules are declared
+ * once and enforced server-side. The old inline JS checks were removed as the
+ * source of truth — the browser is never trusted (PROJECT_RULES.md Rule 6) —
+ * and HTML5 attributes cover the same UX affordance.
+ */
+
+require_once __DIR__ . '/src/bootstrap.php';
+
+use App\Support\Auth;
+use App\Support\Csrf;
+use App\Support\Database;
+use App\Support\Flash;
+use App\Support\Http;
+use App\Support\Logger;
+use App\Support\Validator;
+use App\Support\View;
+
+if (Auth::check()) {
+    Http::redirect(Auth::isAdmin() ? 'admin/seller.php' : 'index.php');
 }
-require_once __DIR__ . '/includes/db.php';
 
-$error_message = '';
-$success_message = '';
+$errors = [];
+$old    = ['fullname' => '', 'email' => '', 'phone' => '', 'address' => ''];
 
-if (isset($_POST['submit'])) {
-    $name     = trim($_POST['fullname'] ?? '');
-    $email    = trim($_POST['email'] ?? '');
-    $phone    = trim($_POST['phone'] ?? '');
-    $address  = trim($_POST['address'] ?? '');
-    $password = $_POST['password'] ?? '';
-    $confirm  = $_POST['confirm'] ?? '';
+if (Http::isPost()) {
+    Csrf::verifyRequest();
 
-    if ($name === '' || $email === '' || $phone === '' || $address === '' || $password === '') {
-        $error_message = 'All fields are required.';
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error_message = 'Please enter a valid email address.';
-    } elseif (strlen($password) < 6) {
-        $error_message = 'Password must be at least 6 characters.';
-    } elseif ($password !== $confirm) {
-        $error_message = 'Passwords do not match.';
-    } else {
+    $validator = (new Validator($_POST))
+        ->label('fullname', 'Full name')
+        ->label('email', 'Email')
+        ->label('phone', 'Phone number')
+        ->label('address', 'Address')
+        ->label('password', 'Password')
+        ->label('confirm', 'Password confirmation')
+        ->required('fullname')->maxLength('fullname', 100)
+        ->required('email')->email('email')->maxLength('email', 150)
+        ->required('phone')->phone('phone')
+        ->required('address')->maxLength('address', 255)
+        ->required('password')->minLength('password', 8)->maxLength('password', 200)
+        ->required('confirm')->matches('confirm', 'password');
+
+    foreach (array_keys($old) as $field) {
+        $old[$field] = $validator->value($field);
+    }
+
+    if ($validator->passes()) {
+        $conn = Database::connection();
+
         $check = $conn->prepare('SELECT id FROM users WHERE email = ? LIMIT 1');
+        $email = $validator->value('email');
         $check->bind_param('s', $email);
         $check->execute();
-        $check->store_result();
-
-        if ($check->num_rows > 0) {
-            $error_message = 'This email is already registered.';
-        } else {
-            $hashed = password_hash($password, PASSWORD_DEFAULT);
-            $insert = $conn->prepare('INSERT INTO users (name, email, password, phone, address, role) VALUES (?, ?, ?, ?, ?, "user")');
-            $insert->bind_param('sssss', $name, $email, $hashed, $phone, $address);
-
-            if ($insert->execute()) {
-                $success_message = 'Registration successful! You can now log in.';
-            } else {
-                $error_message = 'Something went wrong. Please try again.';
-            }
-            $insert->close();
-        }
+        $emailTaken = $check->get_result()->num_rows > 0;
         $check->close();
+
+        if ($emailTaken) {
+            $validator->fail('email', 'This email is already registered.');
+        } else {
+            try {
+                $hashed  = password_hash($validator->value('password'), PASSWORD_DEFAULT);
+                $name    = $validator->value('fullname');
+                $phone   = $validator->value('phone');
+                $address = $validator->value('address');
+                $role    = Auth::ROLE_CUSTOMER;
+
+                $insert = $conn->prepare(
+                    'INSERT INTO users (name, email, password, phone, address, role)
+                     VALUES (?, ?, ?, ?, ?, ?)'
+                );
+                $insert->bind_param('ssssss', $name, $email, $hashed, $phone, $address, $role);
+                $insert->execute();
+                $insert->close();
+
+                // POST/Redirect/GET: a refresh must not resubmit the form.
+                Flash::success('Registration successful! You can now log in.');
+                Http::redirect('login.php');
+            } catch (mysqli_sql_exception $e) {
+                Logger::error('Registration failed', ['error' => $e->getMessage()]);
+                $validator->fail('email', 'Something went wrong. Please try again.');
+            }
+        }
     }
+
+    $errors = $validator->errors();
 }
 ?>
 <!DOCTYPE html>
@@ -70,62 +114,48 @@ if (isset($_POST['submit'])) {
         <div class="auth-box">
             <h1>Create Account</h1>
 
-            <?php if ($error_message !== ''): ?>
-                <div class="alert alert-error"><?php echo htmlspecialchars($error_message); ?></div>
-            <?php endif; ?>
-            <?php if ($success_message !== ''): ?>
-                <div class="alert alert-success"><?php echo htmlspecialchars($success_message); ?></div>
+            <?php if ($errors !== []): ?>
+                <div class="alert alert-error" role="alert">
+                    <?php foreach ($errors as $message): ?>
+                        <div><?= View::e($message) ?></div>
+                    <?php endforeach; ?>
+                </div>
             <?php endif; ?>
 
-            <form method="POST" action="register.php" onsubmit="return validateRegisterForm()">
+            <form method="POST" action="register.php" novalidate>
+                <?= Csrf::field() ?>
                 <div class="form-group">
                     <label for="fullname">Full Name</label>
-                    <input type="text" id="fullname" name="fullname" required>
+                    <input type="text" id="fullname" name="fullname" value="<?= View::e($old['fullname']) ?>" maxlength="100" required autocomplete="name">
                 </div>
                 <div class="form-group">
                     <label for="email">Email</label>
-                    <input type="email" id="email" name="email" required>
+                    <input type="email" id="email" name="email" value="<?= View::e($old['email']) ?>" maxlength="150" required autocomplete="email">
                 </div>
                 <div class="form-group">
                     <label for="phone">Phone Number</label>
-                    <input type="text" id="phone" name="phone" required>
+                    <input type="text" id="phone" name="phone" value="<?= View::e($old['phone']) ?>" maxlength="20" required autocomplete="tel">
                 </div>
                 <div class="form-group">
                     <label for="address">Address</label>
-                    <input type="text" id="address" name="address" required>
+                    <input type="text" id="address" name="address" value="<?= View::e($old['address']) ?>" maxlength="255" required autocomplete="street-address">
                 </div>
                 <div class="form-group">
                     <label for="password">Password</label>
-                    <input type="password" id="password" name="password" required>
+                    <input type="password" id="password" name="password" minlength="8" required autocomplete="new-password">
+                    <small class="form-hint">At least 8 characters.</small>
                 </div>
                 <div class="form-group">
                     <label for="confirm">Confirm Password</label>
-                    <input type="password" id="confirm" name="confirm" required>
+                    <input type="password" id="confirm" name="confirm" minlength="8" required autocomplete="new-password">
                 </div>
-                <button type="submit" name="submit" class="btn btn-block">Register</button>
+                <button type="submit" class="btn btn-block">Register</button>
             </form>
 
             <p class="note">Already have an account? <a href="login.php">Login</a></p>
         </div>
     </div>
 </div>
-
-<script>
-function validateRegisterForm() {
-    const password = document.getElementById('password').value;
-    const confirm = document.getElementById('confirm').value;
-
-    if (password.length < 6) {
-        alert('Password must be at least 6 characters.');
-        return false;
-    }
-    if (password !== confirm) {
-        alert('Passwords do not match.');
-        return false;
-    }
-    return true;
-}
-</script>
 
 </body>
 </html>

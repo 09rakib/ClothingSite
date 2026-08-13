@@ -1,41 +1,85 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
+
+declare(strict_types=1);
+
+/**
+ * Customer / admin login.
+ *
+ * Security notes (PROJECT_RULES.md §19):
+ *   - CSRF token on the form.
+ *   - Attempts are rate limited to slow down credential stuffing.
+ *   - The error message never reveals whether an email exists, so the form
+ *     cannot be used to enumerate accounts.
+ *   - Session id and CSRF token are both rotated on success (Auth::login).
+ */
+
+require_once __DIR__ . '/src/bootstrap.php';
+
+use App\Support\Auth;
+use App\Support\Csrf;
+use App\Support\Database;
+use App\Support\Http;
+use App\Support\RateLimiter;
+use App\Support\Validator;
+use App\Support\View;
+
+// Already signed in — no reason to show the form again.
+if (Auth::check()) {
+    Http::redirect(Auth::isAdmin() ? 'admin/seller.php' : 'index.php');
 }
-require_once __DIR__ . '/includes/db.php';
 
-$error_message = '';
+$errorMessage = '';
+$oldEmail     = '';
 
-if (isset($_POST['submit'])) {
-    $email = trim($_POST['email'] ?? '');
-    $password = $_POST['password'] ?? '';
+if (Http::isPost()) {
+    Csrf::verifyRequest();
 
-    if ($email === '' || $password === '') {
-        $error_message = 'Email and password are required.';
+    $validator = (new Validator($_POST))
+        ->label('email', 'Email')
+        ->label('password', 'Password')
+        ->required('email')->email('email')
+        ->required('password');
+
+    $oldEmail = $validator->value('email');
+
+    // Throttle per email so one attacker cannot lock out every account.
+    $throttleKey = 'login:' . strtolower($oldEmail);
+
+    if (RateLimiter::tooManyAttempts($throttleKey)) {
+        $minutes      = (int) ceil(RateLimiter::secondsRemaining($throttleKey) / 60);
+        $errorMessage = "Too many failed attempts. Please try again in {$minutes} minute(s).";
+    } elseif ($validator->fails()) {
+        $errorMessage = $validator->firstError();
     } else {
+        $conn = Database::connection();
+
         $stmt = $conn->prepare('SELECT id, name, password, role FROM users WHERE email = ? LIMIT 1');
-        $stmt->bind_param('s', $email);
+        $stmt->bind_param('s', $oldEmail);
         $stmt->execute();
-        $result = $stmt->get_result();
+        $user = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
 
-        if ($result->num_rows === 1) {
-            $user = $result->fetch_assoc();
-
-            if (password_verify($password, $user['password'])) {
-                session_regenerate_id(true);
-                $_SESSION['user_id']   = $user['id'];
-                $_SESSION['user_name'] = $user['name'];
-                $_SESSION['user_role'] = $user['role'];
-
-                header('Location: ' . ($user['role'] === 'admin' ? 'admin/seller.php' : 'index.php'));
-                exit;
+        if ($user && password_verify($validator->value('password'), $user['password'])) {
+            // Re-hash transparently if PHP's default cost/algorithm changed.
+            if (password_needs_rehash($user['password'], PASSWORD_DEFAULT)) {
+                $newHash = password_hash($validator->value('password'), PASSWORD_DEFAULT);
+                $rehash  = $conn->prepare('UPDATE users SET password = ? WHERE id = ?');
+                $rehash->bind_param('si', $newHash, $user['id']);
+                $rehash->execute();
+                $rehash->close();
             }
 
-            $error_message = 'Incorrect password.';
-        } else {
-            $error_message = 'No account found with that email. Please register first.';
+            RateLimiter::clear($throttleKey);
+            Auth::login((int) $user['id'], (string) $user['name'], (string) $user['role']);
+
+            Http::redirect($user['role'] === Auth::ROLE_ADMIN ? 'admin/seller.php' : 'index.php');
         }
-        $stmt->close();
+
+        RateLimiter::hit($throttleKey);
+
+        // Deliberately identical for "no such account" and "wrong password"
+        // so the form cannot confirm which emails are registered.
+        $errorMessage = 'Incorrect email or password.';
     }
 }
 ?>
@@ -62,44 +106,29 @@ if (isset($_POST['submit'])) {
         <div class="auth-box">
             <h1>Login</h1>
 
-            <?php if ($error_message !== ''): ?>
-                <div class="alert alert-error"><?php echo htmlspecialchars($error_message); ?></div>
+            <?= App\Support\Flash::render() ?>
+
+            <?php if ($errorMessage !== ''): ?>
+                <div class="alert alert-error" role="alert"><?= View::e($errorMessage) ?></div>
             <?php endif; ?>
 
-            <form method="POST" action="login.php" onsubmit="return validateLoginForm()">
+            <form method="POST" action="login.php" novalidate>
+                <?= Csrf::field() ?>
                 <div class="form-group">
                     <label for="email">Email</label>
-                    <input type="email" id="email" name="email" required>
+                    <input type="email" id="email" name="email" value="<?= View::e($oldEmail) ?>" required autocomplete="email">
                 </div>
                 <div class="form-group">
                     <label for="password">Password</label>
-                    <input type="password" id="password" name="password" required>
+                    <input type="password" id="password" name="password" required autocomplete="current-password">
                 </div>
-                <button type="submit" name="submit" class="btn btn-block">Login</button>
+                <button type="submit" class="btn btn-block">Login</button>
             </form>
 
             <p class="note">New here? <a href="register.php">Create an account</a></p>
         </div>
     </div>
 </div>
-
-<script>
-function validateLoginForm() {
-    const email = document.getElementById('email').value.trim();
-    const password = document.getElementById('password').value;
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (!emailPattern.test(email)) {
-        alert('Please enter a valid email address.');
-        return false;
-    }
-    if (password.length < 6) {
-        alert('Password must be at least 6 characters.');
-        return false;
-    }
-    return true;
-}
-</script>
 
 </body>
 </html>

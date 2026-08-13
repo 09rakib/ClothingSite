@@ -1,35 +1,36 @@
 <?php
+
+declare(strict_types=1);
+
+/**
+ * Customer order history.
+ *
+ * Rows are scoped to the session user inside OrderService — the page never
+ * accepts a user id from the request, so there is no id to tamper with
+ * (PROJECT_RULES.md §13 "Never expose another customer's records by changing
+ * an ID in the URL").
+ *
+ * Product names come from the order snapshot rather than a join, so an order
+ * still reads correctly after the product is renamed or archived (§5).
+ */
+
 $pageTitle = 'My Orders';
 require_once __DIR__ . '/includes/header.php';
 
-if (!isset($_SESSION['user_id'])) {
-    header('Location: login.php');
-    exit;
-}
+use App\Orders\OrderService;
+use App\Support\Auth;
+use App\Support\View;
 
-if ($_SESSION['user_role'] === 'admin') {
-    header('Location: admin/seller.php');
-    exit;
-}
+Auth::requireCustomer();
 
-$stmt = $conn->prepare(
-    'SELECT p.order_id, pr.name AS product_name, p.total_amount, p.payment_method, p.created_at
-     FROM payments p
-     JOIN single_order so ON p.order_id = so.id
-     JOIN products pr ON so.product_id = pr.id
-     WHERE p.user_id = ?
-     ORDER BY p.created_at DESC'
-);
-$stmt->bind_param('i', $_SESSION['user_id']);
-$stmt->execute();
-$result = $stmt->get_result();
+$orders = (new OrderService())->historyForUser((int) Auth::id());
 ?>
 
 <div class="container">
     <h1 class="page-heading">My Orders</h1>
     <p class="page-subheading">Everything you've bought from us so far</p>
 
-    <?php if ($result->num_rows === 0): ?>
+    <?php if ($orders === []): ?>
         <div class="empty-state">
             You haven't placed any orders yet.<br>
             <a href="shop.php" class="btn mt-16">Start Shopping</a>
@@ -39,30 +40,31 @@ $result = $stmt->get_result();
             <table>
                 <thead>
                     <tr>
-                        <th>Order #</th>
-                        <th>Product</th>
-                        <th>Amount</th>
-                        <th>Payment Method</th>
-                        <th>Date</th>
+                        <th scope="col">Order #</th>
+                        <th scope="col">Product</th>
+                        <th scope="col">Unit Price</th>
+                        <th scope="col">Qty</th>
+                        <th scope="col">Total</th>
+                        <th scope="col">Payment Method</th>
+                        <th scope="col">Date</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php while ($row = $result->fetch_assoc()): ?>
+                    <?php foreach ($orders as $row): ?>
                         <tr>
-                            <td>#<?php echo (int) $row['order_id']; ?></td>
-                            <td><?php echo htmlspecialchars($row['product_name']); ?></td>
-                            <td>&#2547; <?php echo number_format($row['total_amount'], 2); ?></td>
-                            <td><?php echo htmlspecialchars(ucwords(str_replace('_', ' ', $row['payment_method']))); ?></td>
-                            <td><?php echo date('d M Y', strtotime($row['created_at'])); ?></td>
+                            <td>#<?= (int) $row['order_id'] ?></td>
+                            <td><?= View::e($row['product_name']) ?></td>
+                            <td><?= View::money($row['unit_price'] ?? 0) ?></td>
+                            <td><?= (int) ($row['quantity'] ?? 1) ?></td>
+                            <td><?= View::money($row['total_amount']) ?></td>
+                            <td><?= View::paymentLabel((string) ($row['payment_method'] ?? '')) ?></td>
+                            <td><?= View::e(date('d M Y', strtotime((string) $row['created_at']))) ?></td>
                         </tr>
-                    <?php endwhile; ?>
+                    <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
     <?php endif; ?>
 </div>
 
-<?php
-$stmt->close();
-require_once __DIR__ . '/includes/footer.php';
-?>
+<?php require_once __DIR__ . '/includes/footer.php'; ?>

@@ -1,0 +1,49 @@
+# =========================================================
+# PROJECT_RULES.md §29 — never commit secrets, dependencies,
+# user uploads, generated caches or database dumps.
+# =========================================================
+
+# Secrets / local environment
+config/config.local.php
+.env
+.env.*
+
+# Composer dependencies (restored with `composer install`)
+/vendor/
+
+# Test + tooling caches
+.phpunit.cache/
+.phpunit.result.cache
+*.cache
+
+# Application logs
+/storage/logs/*
+!/storage/logs/.gitkeep
+
+# Database dumps and backups
+/database/backups/*
+!/database/backups/.gitkeep
+*.sql.gz
+*.dump
+
+# Uploaded product images.
+# The six demo images that ship with the project are force-added below so a
+# fresh clone still renders the seeded catalog; anything uploaded later is
+# user data and stays out of version control.
+/assets/images/products/*
+!/assets/images/products/632341584033b-square.jpg
+!/assets/images/products/69539a9d94808-square.png
+!/assets/images/products/6965d431c8911-square.jpg
+!/assets/images/products/genji.jpg
+!/assets/images/products/genji2.png
+!/assets/images/products/pant1.png
+!/assets/images/products/shirt2.png
+
+# OS / editor noise
+Thumbs.db
+desktop.ini
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~

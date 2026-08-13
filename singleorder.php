@@ -1,76 +1,97 @@
 <?php
-$pageTitle = 'Order Confirmation';
-require_once __DIR__ . '/includes/header.php';
 
-if (!isset($_SESSION['user_id'])) {
-    header('Location: login.php');
-    exit;
-}
+declare(strict_types=1);
 
-if (!isset($_GET['product_id'])) {
-    header('Location: shop.php');
-    exit;
-}
+/**
+ * Place a single-product order ("Buy Now").
+ *
+ * This endpoint previously accepted GET, which meant a link prefetch, a
+ * crawler, or a cross-site <img> tag could place an order on a logged-in
+ * customer's behalf. It is now a CSRF-verified POST guarded by a single-use
+ * token, so a refresh or double-click cannot create a duplicate order
+ * (PROJECT_RULES.md §8, §19).
+ *
+ * All order logic lives in OrderService — this file only orchestrates the
+ * request and renders the outcome (§3.2).
+ */
 
-$user_id = (int) $_SESSION['user_id'];
-$product_id = (int) $_GET['product_id'];
+require_once __DIR__ . '/src/bootstrap.php';
+
+use App\Orders\OrderService;
+use App\Orders\PaymentMethod;
+use App\Support\Auth;
+use App\Support\Http;
+use App\Support\Logger;
+use App\Support\OneTimeToken;
+use App\Support\Validator;
+use App\Support\View;
+
+Http::requirePost();          // Method check + CSRF verification.
+Auth::requireCustomer();      // Admins have no customer cart/orders.
+
 $errorMessage = '';
-$product = null;
+$order        = null;
 
-$stmt = $conn->prepare('SELECT name, price, stock FROM products WHERE id = ?');
-$stmt->bind_param('i', $product_id);
-$stmt->execute();
-$result = $stmt->get_result();
+$productId = Http::intParam($_POST, 'product_id');
 
-if ($result->num_rows === 0) {
-    $errorMessage = 'Product not found.';
+if ($productId === null) {
+    $errorMessage = 'No product was selected.';
+} elseif (!OneTimeToken::consume('place_order', OneTimeToken::fromRequest())) {
+    // The token was already spent: this is a refresh or a double submit.
+    $errorMessage = 'This order was already submitted. Check "My Orders" before trying again.';
 } else {
-    $product = $result->fetch_assoc();
+    // Quantity and payment method are validated, never trusted as given.
+    $validator = (new Validator($_POST))
+        ->label('quantity', 'Quantity')
+        ->label('payment_method', 'Payment method')
+        ->integer('quantity', 1, 100)
+        ->inList('payment_method', PaymentMethod::enabledKeys());
 
-    if ($product['stock'] <= 0) {
-        $errorMessage = 'Sorry, this product is out of stock.';
+    if ($validator->fails()) {
+        $errorMessage = $validator->firstError();
     } else {
-        $total_amount = $product['price'];
+        $quantity      = (int) ($validator->value('quantity') ?: 1);
+        $paymentMethod = $validator->value('payment_method') ?: PaymentMethod::default();
 
         try {
-            $conn->begin_transaction();
-
-            $orderStmt = $conn->prepare('INSERT INTO single_order (user_id, product_id, total_amount) VALUES (?, ?, ?)');
-            $orderStmt->bind_param('iid', $user_id, $product_id, $total_amount);
-            $orderStmt->execute();
-            $order_id = $conn->insert_id;
-            $orderStmt->close();
-
-            $stockStmt = $conn->prepare('UPDATE products SET stock = stock - 1 WHERE id = ? AND stock > 0');
-            $stockStmt->bind_param('i', $product_id);
-            $stockStmt->execute();
-            $stockStmt->close();
-
-            $payment_method = 'cash_on_delivery';
-            $paymentStmt = $conn->prepare('INSERT INTO payments (order_id, user_id, total_amount, payment_method) VALUES (?, ?, ?, ?)');
-            $paymentStmt->bind_param('iids', $order_id, $user_id, $total_amount, $payment_method);
-            $paymentStmt->execute();
-            $paymentStmt->close();
-
-            $conn->commit();
-        } catch (mysqli_sql_exception $e) {
-            $conn->rollback();
+            $order = (new OrderService())->placeSingleProductOrder(
+                (int) Auth::id(),
+                $productId,
+                $quantity,
+                $paymentMethod
+            );
+        } catch (RuntimeException $e) {
+            // Message is written to be safe for the customer to read.
+            $errorMessage = $e->getMessage();
+        } catch (Throwable $e) {
+            Logger::error('Order placement failed', [
+                'user_id'    => Auth::id(),
+                'product_id' => $productId,
+                'error'      => $e->getMessage(),
+            ]);
             $errorMessage = 'Something went wrong while placing your order. Please try again.';
         }
     }
 }
-$stmt->close();
+
+$pageTitle = 'Order Confirmation';
+require_once __DIR__ . '/includes/header.php';
 ?>
 
 <div class="container-narrow text-center">
     <?php if ($errorMessage !== ''): ?>
-        <div class="alert alert-error"><?php echo htmlspecialchars($errorMessage); ?></div>
+        <div class="alert alert-error" role="alert"><?= View::e($errorMessage) ?></div>
         <a href="shop.php" class="btn">Back to Shop</a>
+        <a href="myorder.php" class="btn btn-outline" style="background:var(--color-primary); margin-left:8px;">View My Orders</a>
     <?php else: ?>
-        <div class="alert alert-success">
-            Order placed successfully! <strong><?php echo htmlspecialchars($product['name']); ?></strong>
-            (&#2547; <?php echo number_format($total_amount, 2); ?>) will be delivered via cash on delivery.
+        <div class="alert alert-success" role="status">
+            Order placed successfully!
+            <strong><?= View::e($order['product_name']) ?></strong>
+            &times; <?= (int) $order['quantity'] ?>
+            (<?= View::money($order['total']) ?>)
+            &mdash; paying by <?= View::e(PaymentMethod::label($order['payment_method'])) ?>.
         </div>
+        <p class="note">Your order reference is #<?= (int) $order['order_id'] ?>.</p>
         <a href="myorder.php" class="btn">View My Orders</a>
         <a href="shop.php" class="btn btn-outline" style="background:var(--color-primary); margin-left:8px;">Buy More</a>
     <?php endif; ?>

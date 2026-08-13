@@ -1,0 +1,107 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Feature;
+
+use App\Support\Database;
+use mysqli;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * Base class for tests that hit the real (test) database.
+ *
+ * Each test starts from a known, empty set of business tables so results do
+ * not depend on execution order.
+ */
+abstract class DatabaseTestCase extends TestCase
+{
+    protected mysqli $db;
+
+    protected function setUp(): void
+    {
+        $this->db = Database::connection();
+        $this->truncateAll();
+    }
+
+    /**
+     * Empty every business table so each test starts from a known state.
+     *
+     * `categories` is included because migration 001 seeds Shirts/Pants/Casual
+     * Wear; leaving those rows in place would make createCategory('Shirts')
+     * collide with the unique index.
+     */
+    protected function truncateAll(): void
+    {
+        $this->db->query('SET FOREIGN_KEY_CHECKS = 0');
+        foreach (['payments', 'single_order', 'contact_messages', 'products', 'categories', 'users'] as $table) {
+            $this->db->query("TRUNCATE TABLE {$table}");
+        }
+        $this->db->query('SET FOREIGN_KEY_CHECKS = 1');
+    }
+
+    protected function createUser(string $email = 'customer@test.com', string $role = 'user'): int
+    {
+        $hash = password_hash('Password@123', PASSWORD_DEFAULT);
+
+        $stmt = $this->db->prepare(
+            'INSERT INTO users (name, email, password, phone, address, role)
+             VALUES (?, ?, ?, ?, ?, ?)'
+        );
+        $name    = 'Test User';
+        $phone   = '01700000000';
+        $address = 'Dhaka';
+        $stmt->bind_param('ssssss', $name, $email, $hash, $phone, $address, $role);
+        $stmt->execute();
+        $id = (int) $this->db->insert_id;
+        $stmt->close();
+
+        return $id;
+    }
+
+    protected function createCategory(string $name = 'Shirts'): int
+    {
+        $stmt = $this->db->prepare('INSERT INTO categories (name) VALUES (?)');
+        $stmt->bind_param('s', $name);
+        $stmt->execute();
+        $id = (int) $this->db->insert_id;
+        $stmt->close();
+
+        return $id;
+    }
+
+    protected function createProduct(
+        string $name = 'Test Shirt',
+        string $price = '500.00',
+        int $stock = 10
+    ): int {
+        $stmt = $this->db->prepare(
+            'INSERT INTO products (name, description, price, stock, image, category_id)
+             VALUES (?, ?, ?, ?, ?, NULL)'
+        );
+        $description = 'A test product';
+        $image       = 'test.jpg';
+        $stmt->bind_param('ssdis', $name, $description, $price, $stock, $image);
+        $stmt->execute();
+        $id = (int) $this->db->insert_id;
+        $stmt->close();
+
+        return $id;
+    }
+
+    protected function stockOf(int $productId): int
+    {
+        $stmt = $this->db->prepare('SELECT stock FROM products WHERE id = ?');
+        $stmt->bind_param('i', $productId);
+        $stmt->execute();
+        $stock = (int) $stmt->get_result()->fetch_assoc()['stock'];
+        $stmt->close();
+
+        return $stock;
+    }
+
+    protected function countRows(string $table): int
+    {
+        return (int) $this->db->query("SELECT COUNT(*) AS c FROM {$table}")->fetch_assoc()['c'];
+    }
+}
