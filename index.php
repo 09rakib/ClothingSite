@@ -10,14 +10,11 @@ $pageTitle = 'Home';
 require_once __DIR__ . '/includes/header.php';
 
 use App\Catalog\ProductRepository;
-use App\Orders\PaymentMethod;
 use App\Support\Auth;
 use App\Support\Csrf;
-use App\Support\OneTimeToken;
 use App\Support\View;
 
 $featured = (new ProductRepository())->latestActive(3);
-$canBuy   = Auth::check() && Auth::isCustomer();
 ?>
 
 <section class="hero">
@@ -55,21 +52,21 @@ $canBuy   = Auth::check() && Auth::isCustomer();
                             </span>
                         </div>
 
-                        <?php if ($canBuy && $stock > 0): ?>
-                            <form method="post" action="singleorder.php" class="buy-form">
+                        <?php if ($stock > 0 && !Auth::isAdmin()): ?>
+                            <form method="post" action="cartaction.php" class="buy-form">
                                 <?= Csrf::field() ?>
-                                <?= OneTimeToken::field('place_order') ?>
+                                <input type="hidden" name="action" value="add">
                                 <input type="hidden" name="product_id" value="<?= (int) $row['id'] ?>">
                                 <input type="hidden" name="quantity" value="1">
-                                <input type="hidden" name="payment_method" value="<?= View::e(PaymentMethod::default()) ?>">
-                                <button type="submit" class="btn btn-block">Buy Now</button>
+                                <input type="hidden" name="return" value="index.php">
+                                <button type="submit" class="btn btn-block">Add to Cart</button>
                             </form>
-                        <?php elseif ($canBuy): ?>
-                            <span class="btn btn-block btn-disabled" aria-disabled="true">Out of Stock</span>
-                        <?php elseif (Auth::check()): ?>
+                            <a href="<?= View::e($detailUrl) ?>" class="btn btn-block btn-outline mt-8"
+                               style="background:var(--color-primary);">View Details</a>
+                        <?php elseif (Auth::isAdmin()): ?>
                             <span class="btn btn-block btn-disabled" aria-disabled="true">Admin View</span>
                         <?php else: ?>
-                            <a href="login.php" class="btn btn-block">Login to Buy</a>
+                            <span class="btn btn-block btn-disabled" aria-disabled="true">Out of Stock</span>
                         <?php endif; ?>
                     </div>
                 </div>

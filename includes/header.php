@@ -49,6 +49,25 @@ $metaDescription = $metaDescription
             <li><a href="about.php" class="<?= $currentPage === 'about.php' ? 'active' : '' ?>">About</a></li>
             <li><a href="contact.php" class="<?= $currentPage === 'contact.php' ? 'active' : '' ?>">Contact</a></li>
 
+            <?php
+            /*
+             * Cart link with a live badge. Guests see it too — they can build a
+             * cart before logging in, and it is merged into their account on
+             * login. Admins have no storefront cart, so it is hidden for them.
+             */
+            if (!Auth::isAdmin()):
+                $cartCount = (new App\Cart\CartService())->count();
+            ?>
+                <li>
+                    <a href="cart.php" class="cart-link <?= $currentPage === 'cart.php' ? 'active' : '' ?>">
+                        Cart
+                        <?php if ($cartCount > 0): ?>
+                            <span class="cart-badge" aria-label="<?= $cartCount ?> items in cart"><?= $cartCount ?></span>
+                        <?php endif; ?>
+                    </a>
+                </li>
+            <?php endif; ?>
+
             <?php if (Auth::check()): ?>
                 <?php if (Auth::isAdmin()): ?>
                     <li><a href="admin/seller.php" class="cta">Admin Panel</a></li>

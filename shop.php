@@ -16,12 +16,10 @@ require_once __DIR__ . '/includes/header.php';
 
 use App\Catalog\CategoryRepository;
 use App\Catalog\ProductRepository;
-use App\Orders\PaymentMethod;
 use App\Support\Auth;
 use App\Support\Config;
 use App\Support\Csrf;
 use App\Support\Http;
-use App\Support\OneTimeToken;
 use App\Support\View;
 
 $products   = new ProductRepository();
@@ -45,7 +43,6 @@ $result = $products->paginateActive([
     'page'     => $page,
 ]);
 
-$canBuy = Auth::check() && Auth::isCustomer();
 
 // Preserved across pagination and sort links so filters are not lost.
 $activeFilters = array_filter([
@@ -124,30 +121,28 @@ $activeFilters = array_filter([
                             </span>
                         </div>
 
-                        <?php if ($canBuy && $stock > 0): ?>
+                        <?php if ($stock > 0 && !Auth::isAdmin()): ?>
                             <?php
                             /*
-                             * Buy Now is a POST form, not a link: it changes
-                             * state. The one-time token makes a double submit
-                             * idempotent (§8).
+                             * Add to Cart is a POST form, not a link: it
+                             * changes state. Guests may use it — the cart is
+                             * merged into their account on login.
                              */
                             ?>
-                            <form method="post" action="singleorder.php" class="buy-form">
+                            <form method="post" action="cartaction.php" class="buy-form">
                                 <?= Csrf::field() ?>
-                                <?= OneTimeToken::field('place_order') ?>
+                                <input type="hidden" name="action" value="add">
                                 <input type="hidden" name="product_id" value="<?= (int) $row['id'] ?>">
-                                <input type="hidden" name="payment_method" value="<?= View::e(PaymentMethod::default()) ?>">
-                                <label class="sr-only" for="qty-<?= (int) $row['id'] ?>">Quantity</label>
-                                <input type="number" id="qty-<?= (int) $row['id'] ?>" name="quantity"
-                                       value="1" min="1" max="<?= $stock ?>" class="qty-input">
-                                <button type="submit" class="btn btn-block">Buy Now</button>
+                                <input type="hidden" name="quantity" value="1">
+                                <input type="hidden" name="return" value="shop.php">
+                                <button type="submit" class="btn btn-block">Add to Cart</button>
                             </form>
-                        <?php elseif ($canBuy): ?>
-                            <span class="btn btn-block btn-disabled" aria-disabled="true">Out of Stock</span>
-                        <?php elseif (Auth::check()): ?>
+                            <a href="<?= View::e($detailUrl) ?>" class="btn btn-block btn-outline mt-8"
+                               style="background:var(--color-primary);">View Details</a>
+                        <?php elseif (Auth::isAdmin()): ?>
                             <span class="btn btn-block btn-disabled" aria-disabled="true">Admin View</span>
                         <?php else: ?>
-                            <a href="login.php" class="btn btn-block">Login to Buy</a>
+                            <span class="btn btn-block btn-disabled" aria-disabled="true">Out of Stock</span>
                         <?php endif; ?>
                     </div>
                 </div>

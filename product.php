@@ -136,26 +136,48 @@ require_once __DIR__ . '/includes/header.php';
                 <?= nl2br(View::e($product['description'])) ?>
             </div>
 
-            <?php if ($canBuy && $stock > 0): ?>
-                <form method="post" action="singleorder.php" class="detail-buy-form">
+            <?php if ($stock > 0 && !Auth::isAdmin()): ?>
+                <?php
+                /*
+                 * Add to Cart is available to guests as well as customers —
+                 * the cart is merged into their account when they log in.
+                 * Buy Now stays for customers who want to skip the cart, and
+                 * still requires a logged-in customer because it places an
+                 * order immediately.
+                 */
+                ?>
+                <form method="post" action="cartaction.php" class="detail-buy-form">
                     <?= Csrf::field() ?>
-                    <?= OneTimeToken::field('place_order') ?>
+                    <input type="hidden" name="action" value="add">
                     <input type="hidden" name="product_id" value="<?= $productId ?>">
-                    <input type="hidden" name="payment_method" value="<?= View::e(PaymentMethod::default()) ?>">
+                    <input type="hidden" name="return_slug" value="<?= View::e($product['slug']) ?>">
 
                     <div class="qty-row">
                         <label for="quantity">Quantity</label>
                         <input type="number" id="quantity" name="quantity" value="1" min="1" max="<?= $stock ?>" class="qty-input">
                     </div>
 
-                    <button type="submit" class="btn btn-block btn-lg">Buy Now</button>
+                    <button type="submit" class="btn btn-block btn-lg">Add to Cart</button>
                 </form>
-            <?php elseif ($canBuy): ?>
-                <span class="btn btn-block btn-disabled btn-lg" aria-disabled="true">Out of Stock</span>
-            <?php elseif (Auth::check()): ?>
+
+                <?php if ($canBuy): ?>
+                    <form method="post" action="singleorder.php" class="detail-buy-form">
+                        <?= Csrf::field() ?>
+                        <?= OneTimeToken::field('place_order') ?>
+                        <input type="hidden" name="product_id" value="<?= $productId ?>">
+                        <input type="hidden" name="quantity" value="1">
+                        <input type="hidden" name="payment_method" value="<?= View::e(PaymentMethod::default()) ?>">
+                        <button type="submit" class="btn btn-block btn-outline" style="background:var(--color-primary);">Buy Now (1 item)</button>
+                    </form>
+                <?php else: ?>
+                    <p class="note text-center">
+                        <a href="login.php">Log in</a> to check out — your cart will be waiting.
+                    </p>
+                <?php endif; ?>
+            <?php elseif (Auth::isAdmin()): ?>
                 <span class="btn btn-block btn-disabled btn-lg" aria-disabled="true">Admin View</span>
             <?php else: ?>
-                <a href="login.php" class="btn btn-block btn-lg">Login to Buy</a>
+                <span class="btn btn-block btn-disabled btn-lg" aria-disabled="true">Out of Stock</span>
             <?php endif; ?>
 
             <ul class="product-perks">
