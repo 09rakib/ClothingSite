@@ -34,7 +34,18 @@ abstract class DatabaseTestCase extends TestCase
     protected function truncateAll(): void
     {
         $this->db->query('SET FOREIGN_KEY_CHECKS = 0');
-        foreach (['payments', 'single_order', 'contact_messages', 'products', 'categories', 'users'] as $table) {
+        // product_images is listed explicitly: TRUNCATE does not fire the
+        // ON DELETE CASCADE, so without this its rows survive and leak into
+        // the next test.
+        foreach ([
+            'payments',
+            'single_order',
+            'contact_messages',
+            'product_images',
+            'products',
+            'categories',
+            'users',
+        ] as $table) {
             $this->db->query("TRUNCATE TABLE {$table}");
         }
         $this->db->query('SET FOREIGN_KEY_CHECKS = 1');

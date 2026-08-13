@@ -827,3 +827,201 @@ textarea:focus-visible {
     .filter-row { flex-direction: column; align-items: stretch; }
     .filter-input { flex: 1 1 auto; }
 }
+
+/* =========================================================
+   Phase 1 additions — catalog foundation
+   Product detail page, image gallery, breadcrumb, category
+   admin and the two-column admin split layout.
+   ========================================================= */
+
+/* ---------- Breadcrumb ---------- */
+.breadcrumb {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    font-size: 13.5px;
+    color: var(--color-text-muted);
+    margin-bottom: 18px;
+}
+.breadcrumb a { color: var(--color-primary); text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+.breadcrumb [aria-current="page"] { color: var(--color-text); font-weight: 600; }
+
+/* ---------- Product detail ---------- */
+.product-detail {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 34px;
+    background: var(--color-surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    padding: 26px;
+    margin-bottom: 34px;
+}
+
+.gallery-main {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    border-radius: var(--radius);
+    background: var(--color-bg);
+}
+
+.gallery-thumbs {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+}
+
+.gallery-thumb {
+    width: 66px;
+    height: 66px;
+    padding: 0;
+    border: 2px solid var(--color-border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: none;
+    cursor: pointer;
+}
+.gallery-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gallery-thumb.is-active { border-color: var(--color-primary); }
+
+.product-title { font-size: 27px; line-height: 1.25; margin-bottom: 8px; }
+
+.product-sku {
+    font-size: 12.5px;
+    color: var(--color-text-muted);
+    letter-spacing: 0.03em;
+    margin-bottom: 10px;
+}
+
+.product-detail-price {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--color-primary);
+    margin-bottom: 12px;
+}
+
+.product-stock-line { margin-bottom: 16px; }
+
+.product-detail-desc {
+    color: var(--color-text-muted);
+    line-height: 1.7;
+    margin-bottom: 22px;
+}
+
+.detail-buy-form { margin-bottom: 18px; }
+
+.qty-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+.qty-row label { font-weight: 600; font-size: 14px; }
+
+.btn-lg { padding: 13px 20px; font-size: 15.5px; }
+
+.product-perks {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    border-top: 1px solid var(--color-border);
+    padding-top: 16px;
+}
+.product-perks li {
+    position: relative;
+    padding-left: 22px;
+    margin-bottom: 8px;
+    font-size: 13.5px;
+    color: var(--color-text-muted);
+}
+.product-perks li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    color: var(--color-success);
+    font-weight: 700;
+}
+
+.related-section { margin-top: 10px; }
+
+/* Product cards become clickable links */
+.product-card-link { display: block; text-decoration: none; color: inherit; }
+.product-body h3 a { color: inherit; text-decoration: none; }
+.product-body h3 a:hover { color: var(--color-primary); }
+
+/* Low-stock pill, distinct from active/archived */
+.status-low { background: #fef3c7; color: #92400e; }
+
+/* ---------- Admin split layout ---------- */
+.admin-split {
+    display: grid;
+    grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+    gap: 22px;
+    align-items: start;
+}
+
+.admin-card-wide { max-width: none; }
+
+.card-title {
+    font-size: 16px;
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.optional { font-weight: 400; color: var(--color-text-muted); font-size: 12.5px; }
+
+.form-check { display: flex; align-items: center; gap: 8px; }
+.form-check input { width: auto; margin: 0; }
+.form-check label { margin: 0; font-weight: 400; }
+
+.slug-code {
+    background: var(--color-bg);
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 12.5px;
+    color: var(--color-text-muted);
+}
+
+.muted { color: var(--color-text-muted); }
+
+/* ---------- Admin image manager ---------- */
+.image-manage-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 16px;
+}
+
+.image-manage-card {
+    border: 2px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 10px;
+    text-align: center;
+    background: var(--color-surface);
+}
+.image-manage-card.is-primary { border-color: var(--color-success); }
+
+.image-manage-card img {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    border-radius: 6px;
+    margin-bottom: 8px;
+}
+
+.image-manage-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+
+@media (max-width: 900px) {
+    .product-detail { grid-template-columns: 1fr; gap: 22px; }
+    .admin-split { grid-template-columns: 1fr; }
+}

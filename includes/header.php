@@ -20,6 +20,10 @@ $conn = Database::connection();
 
 $pageTitle   = $pageTitle ?? 'Shirt & Pant Store';
 $currentPage = basename($_SERVER['PHP_SELF']);
+
+// Pages may set $metaDescription before including this file (§26 SEO).
+$metaDescription = $metaDescription
+    ?? 'Quality shirts and pants delivered across Bangladesh. Everyday essentials at honest prices.';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -27,6 +31,10 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title><?= View::e($pageTitle) ?> | Shirt &amp; Pant Store</title>
+<meta name="description" content="<?= View::e($metaDescription) ?>">
+<meta property="og:title" content="<?= View::e($pageTitle) ?>">
+<meta property="og:description" content="<?= View::e($metaDescription) ?>">
+<meta property="og:type" content="website">
 <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>

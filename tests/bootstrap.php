@@ -59,20 +59,14 @@ Config::load($baseConfig);
     $server->query("CREATE DATABASE `{$safeName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
     $server->select_db($dbName);
 
-    foreach (glob(__DIR__ . '/../database/migrations/*.sql') ?: [] as $migration) {
-        $sql = (string) file_get_contents($migration);
-
-        $server->multi_query($sql);
-        do {
-            if ($result = $server->store_result()) {
-                $result->free();
-            }
-        } while ($server->more_results() && $server->next_result());
-
-        if ($server->errno !== 0) {
-            fwrite(STDERR, "\nMigration failed in test setup: " . basename($migration) . "\n" . $server->error . "\n");
-            exit(1);
-        }
+    // Build the test schema through the same Migrator the CLI runner uses,
+    // so the test database can never drift from the real one.
+    try {
+        (new \App\Support\Migrator(__DIR__ . '/../database/migrations'))
+            ->applyAllFresh($server);
+    } catch (\Throwable $e) {
+        fwrite(STDERR, "\nMigration failed in test setup:\n" . $e->getMessage() . "\n");
+        exit(1);
     }
 
     $server->close();

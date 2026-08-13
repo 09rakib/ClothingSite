@@ -6,8 +6,9 @@ seller panel.
 
 The codebase follows the engineering rules in [PROJECT_RULES.md](PROJECT_RULES.md),
 which is the project's architecture and security constitution. **Phase 0
-(Architecture & Safety Foundation) is complete** — see
-[Phase 0 changelog](#phase-0--architecture--safety-foundation-complete) below.
+(Architecture & Safety Foundation) and Phase 1 (Catalog Foundation) are
+complete** — see the [Phase 0](#phase-0--architecture--safety-foundation-complete)
+and [Phase 1](#phase-1--catalog-foundation-complete) changelogs below.
 
 ## Tech Stack
 
@@ -60,13 +61,18 @@ git-ignored (§19 "Secrets").
 **Customer**
 - Browse products on the Home and Shop pages
 - Search, filter by category, sort and paginate the catalog
+- Product detail pages at readable URLs (`product.php?slug=denim-pant`) with an
+  image gallery, stock state and related products
 - Register / login (bcrypt hashes, rate-limited login)
 - Buy a product (quantity selectable, stock-checked, transactional)
 - View personal order history with the price actually paid
 
 **Admin (Seller Panel)**
 - Dashboard: products, low/out of stock, archived, orders, revenue, customers
-- Add / update products with validated image upload
+- Add / update products with validated image upload, SKU and an optional
+  per-product low-stock threshold
+- Manage each product's image gallery (upload, set primary, delete)
+- Manage categories (create, rename, delete safely)
 - Archive & restore products (archiving preserves order history)
 
 **Static pages**
@@ -154,17 +160,35 @@ Orders* but removes it from the shop; a PHP file renamed to `.jpg` is rejected
 by content sniffing and never written to disk; SQL injection attempts through
 `?q=` and `?sort=` leave the schema intact.
 
+## Phase 1 — Catalog Foundation (complete)
+
+| Feature | Detail |
+|---|---|
+| Product slugs | `App\Support\Slugger` generates unique, URL-safe slugs. Stable across edits that don't change the name; `?product_id=N` 301-redirects to the canonical slug URL. |
+| Product detail page | New `product.php` — gallery, breadcrumb, stock state, SKU, related products, `meta description` + Open Graph tags. Unknown slug returns a real **404**. |
+| Multiple images | `product_images` table with exactly one primary. `products.image` is kept in sync as a denormalised cache so list views need no join. A product can never be left with zero images. |
+| Category management | Full admin CRUD. Deleting a category leaves its products on sale and uncategorised, and says how many are affected before you confirm. |
+| Per-product low stock | Optional `low_stock_threshold` override; `NULL` means "use the store default from config". Dashboard counts respect the override via `COALESCE`. |
+| SKU | Optional stock-keeping code, shown on the product page. |
+| PHP migrations | The runner now executes `.php` migrations as well as `.sql`, so data backfills can reuse application logic instead of reimplementing it in SQL. Both the CLI runner and the test bootstrap go through one shared `Migrator` class, so the test schema cannot drift from the real one. |
+
+Verified end-to-end: slug URLs resolve, unknown slugs 404, legacy id URLs
+301-redirect, gallery upload stores a server-generated filename, set-primary
+updates `products.image`, deleting the last image is refused, a forged
+`image_id` from another product is rejected, and deleting a category leaves its
+products on sale with order history intact.
+
 ## Roadmap
 
-Phase 0 is done. Remaining phases, in the order PROJECT_RULES.md §37
-recommends: catalog foundation → **cart** → checkout & order status machine →
-admin order management → inventory movements → payment abstraction →
-customer profile/address/password reset → notifications → reviews → wishlist →
-blog CMS → roles & permissions → analytics → audit logs → production hardening.
+Phases 0 and 1 are done. Next, in the order PROJECT_RULES.md §37 recommends:
+**cart** → checkout → order status machine → admin order management →
+inventory movements → payment abstraction → customer profile/address/password
+reset → notifications → reviews → wishlist → blog CMS → roles & permissions →
+analytics → audit logs → production hardening.
 
-Known gaps deliberately **not** addressed in Phase 0: shopping cart, order
-status tracking, real email delivery, password reset, reviews, wishlist,
-profile editing, and the admin order-management screen.
+Known gaps deliberately **not** addressed yet: shopping cart, order status
+tracking, real email delivery, password reset, reviews, wishlist, profile
+editing, and the admin order-management screen.
 
 ## Author
 
