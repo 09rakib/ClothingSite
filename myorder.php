@@ -5,6 +5,9 @@ declare(strict_types=1);
 /**
  * Customer order history.
  *
+ * Orders are grouped by reference, so a checkout containing three products
+ * reads as one order rather than three unrelated ones.
+ *
  * Rows are scoped to the session user inside OrderService — the page never
  * accepts a user id from the request, so there is no id to tamper with
  * (PROJECT_RULES.md §13 "Never expose another customer's records by changing
@@ -23,7 +26,7 @@ use App\Support\View;
 
 Auth::requireCustomer();
 
-$orders = (new OrderService())->historyForUser((int) Auth::id());
+$orders = (new OrderService())->groupedHistoryForUser((int) Auth::id());
 ?>
 
 <div class="container">
@@ -36,34 +39,58 @@ $orders = (new OrderService())->historyForUser((int) Auth::id());
             <a href="shop.php" class="btn mt-16">Start Shopping</a>
         </div>
     <?php else: ?>
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th scope="col">Order #</th>
-                        <th scope="col">Product</th>
-                        <th scope="col">Unit Price</th>
-                        <th scope="col">Qty</th>
-                        <th scope="col">Total</th>
-                        <th scope="col">Payment Method</th>
-                        <th scope="col">Date</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($orders as $row): ?>
-                        <tr>
-                            <td>#<?= (int) $row['order_id'] ?></td>
-                            <td><?= View::e($row['product_name']) ?></td>
-                            <td><?= View::money($row['unit_price'] ?? 0) ?></td>
-                            <td><?= (int) ($row['quantity'] ?? 1) ?></td>
-                            <td><?= View::money($row['total_amount']) ?></td>
-                            <td><?= View::paymentLabel((string) ($row['payment_method'] ?? '')) ?></td>
-                            <td><?= View::e(date('d M Y', strtotime((string) $row['created_at']))) ?></td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
+        <?php foreach ($orders as $order): ?>
+            <article class="order-card">
+                <header class="order-card-header">
+                    <div>
+                        <h2 class="order-reference"><?= View::e($order['reference']) ?></h2>
+                        <p class="order-date">
+                            <?= View::e(date('d M Y, g:i a', strtotime($order['created_at']))) ?>
+                        </p>
+                    </div>
+                    <div class="order-card-meta">
+                        <span class="order-total"><?= View::money($order['total']) ?></span>
+                        <?php if ($order['payment_method'] !== null): ?>
+                            <span class="status-pill status-active">
+                                <?= View::paymentLabel($order['payment_method']) ?>
+                            </span>
+                        <?php endif; ?>
+                    </div>
+                </header>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th scope="col">Product</th>
+                                <th scope="col">Unit Price</th>
+                                <th scope="col">Qty</th>
+                                <th scope="col">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($order['lines'] as $line): ?>
+                                <tr>
+                                    <td>
+                                        <?php if (!empty($line['product_slug'])): ?>
+                                            <a href="product.php?slug=<?= urlencode((string) $line['product_slug']) ?>">
+                                                <?= View::e($line['product_name']) ?>
+                                            </a>
+                                        <?php else: ?>
+                                            <?= View::e($line['product_name']) ?>
+                                            <small class="muted">(no longer sold)</small>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?= View::money($line['unit_price'] ?? 0) ?></td>
+                                    <td><?= (int) ($line['quantity'] ?? 1) ?></td>
+                                    <td><?= View::money($line['total_amount']) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </article>
+        <?php endforeach; ?>
     <?php endif; ?>
 </div>
 

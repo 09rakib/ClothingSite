@@ -15,10 +15,12 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/src/bootstrap.php';
 
+use App\Cart\CartService;
 use App\Support\Auth;
 use App\Support\Csrf;
 use App\Support\Database;
 use App\Support\Http;
+use App\Support\Logger;
 use App\Support\RateLimiter;
 use App\Support\Validator;
 use App\Support\View;
@@ -71,6 +73,20 @@ if (Http::isPost()) {
 
             RateLimiter::clear($throttleKey);
             Auth::login((int) $user['id'], (string) $user['name'], (string) $user['role']);
+
+            // Carry anything the visitor collected before logging in into
+            // their account, so a guest cart is never silently lost (§8).
+            if ($user['role'] !== Auth::ROLE_ADMIN) {
+                try {
+                    (new CartService())->mergeGuestCartIntoUser((int) $user['id']);
+                } catch (Throwable $e) {
+                    // A merge failure must never block a valid login.
+                    Logger::error('Guest cart merge failed', [
+                        'user_id' => $user['id'],
+                        'error'   => $e->getMessage(),
+                    ]);
+                }
+            }
 
             Http::redirect($user['role'] === Auth::ROLE_ADMIN ? 'admin/seller.php' : 'index.php');
         }

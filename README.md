@@ -5,10 +5,10 @@ Customers browse and buy products; admins manage the catalog from a separate
 seller panel.
 
 The codebase follows the engineering rules in [PROJECT_RULES.md](PROJECT_RULES.md),
-which is the project's architecture and security constitution. **Phase 0
-(Architecture & Safety Foundation) and Phase 1 (Catalog Foundation) are
-complete** — see the [Phase 0](#phase-0--architecture--safety-foundation-complete)
-and [Phase 1](#phase-1--catalog-foundation-complete) changelogs below.
+which is the project's architecture and security constitution. **Phases 0–2 are
+complete**: [Architecture & Safety Foundation](#phase-0--architecture--safety-foundation-complete),
+[Catalog Foundation](#phase-1--catalog-foundation-complete) and
+[Cart & Checkout](#phase-2--cart--checkout-complete).
 
 ## Tech Stack
 
@@ -63,9 +63,12 @@ git-ignored (§19 "Secrets").
 - Search, filter by category, sort and paginate the catalog
 - Product detail pages at readable URLs (`product.php?slug=denim-pant`) with an
   image gallery, stock state and related products
+- **Add to cart as a guest** — the cart follows you into your account on login
+- Update quantities, remove items, empty the cart
+- Checkout with a payment-method choice, order review and an order reference
 - Register / login (bcrypt hashes, rate-limited login)
-- Buy a product (quantity selectable, stock-checked, transactional)
-- View personal order history with the price actually paid
+- Buy Now for a single item, skipping the cart
+- View personal order history, grouped so one checkout is one order
 
 **Admin (Seller Panel)**
 - Dashboard: products, low/out of stock, archived, orders, revenue, customers
@@ -90,7 +93,9 @@ ClothingSite/
 │   ├── Support/                   Config, Database, Auth, Csrf, Session,
 │   │                              Validator, Flash, Http, ImageUploader,
 │   │                              OneTimeToken, RateLimiter, Logger, View
-│   ├── Catalog/                   ProductRepository, CategoryRepository
+│   ├── Catalog/                   ProductRepository, CategoryRepository,
+│   │                              ProductImageRepository
+│   ├── Cart/                      CartService, CartRepository
 │   └── Orders/                    OrderService, PaymentMethod
 ├── database/
 │   ├── migrate.php                Migration runner (+ backup)
@@ -178,17 +183,37 @@ updates `products.image`, deleting the last image is refused, a forged
 `image_id` from another product is rejected, and deleting a category leaves its
 products on sale with order history intact.
 
+## Phase 2 — Cart & Checkout (complete)
+
+| Feature | Detail |
+|---|---|
+| Cart | `carts` + `cart_items`, one line per product (`UNIQUE (cart_id, product_id)`). Add, update quantity, remove and clear all go through one POST-only, CSRF-verified endpoint. |
+| **Guest carts** | Supported. Anonymous visitors get a random cart token in an httponly cookie; on login that cart is merged into their account — quantities summed, then clamped to available stock — and discarded. |
+| Server-side money | Totals are always computed from the live `products.price`. `price_at_add` is stored **only** to tell the customer "this was ৳100 when you added it"; it never sets the charge. |
+| Stock safety | Validated on add and update, then re-validated at checkout under a `SELECT … FOR UPDATE` row lock. The cart warns "only N left" and blocks checkout — enforced on the server, not just by disabling the button. |
+| Transactional checkout | `placeOrderFromCart()` locks products in id order (no deadlocks), re-prices every line, and rolls back the whole order if any line fails. **Partial success is impossible.** |
+| Order references | One checkout = one `ORD-XXXXXXXX` reference, so a three-product order reads as one order in My Orders instead of three. |
+| Idempotency | A single-use token means a double-click or refresh on Place Order cannot create a second order. |
+
+Verified end-to-end: a guest built a cart, logged in and kept it; a two-product
+checkout decremented both stocks and emptied the cart; replaying the checkout
+token created no duplicate; forcing a POST past the disabled button was refused
+server-side with zero orders written; and editing another customer's cart line
+by changing `item_id` was rejected.
+
 ## Roadmap
 
-Phases 0 and 1 are done. Next, in the order PROJECT_RULES.md §37 recommends:
-**cart** → checkout → order status machine → admin order management →
-inventory movements → payment abstraction → customer profile/address/password
-reset → notifications → reviews → wishlist → blog CMS → roles & permissions →
-analytics → audit logs → production hardening.
+Phases 0, 1 and 2 are done. Next, in the order PROJECT_RULES.md §37 recommends:
+**order status machine** → admin order management → inventory movements →
+payment abstraction → customer profile/address/password reset → notifications →
+reviews → wishlist → blog CMS → roles & permissions → analytics → audit logs →
+production hardening.
 
-Known gaps deliberately **not** addressed yet: shopping cart, order status
-tracking, real email delivery, password reset, reviews, wishlist, profile
-editing, and the admin order-management screen.
+Known gaps deliberately **not** addressed yet: order status tracking
+(Pending/Shipped/Delivered), the admin order-management screen, a customer
+address book, real email delivery, password reset, reviews, wishlist and
+profile editing. `single_order` also still holds one row per product — the
+`orders` + `order_items` restructure is Phase 3.
 
 ## Author
 

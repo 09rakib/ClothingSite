@@ -936,13 +936,48 @@ asks for this and there was previously no product page at all.
 
 ## Phase 2 --- Cart
 
--   [ ] Cart table.
--   [ ] Cart items.
--   [ ] Add/update/remove/clear.
--   [ ] Server-side price calculation.
--   [ ] Stock validation.
--   [ ] Cart persistence.
--   [ ] Guest cart decision.
+**STATUS: COMPLETE (2026-08-14)**
+
+-   [x] Cart table. --- `carts`, owned by either a customer (`user_id`) or an
+    anonymous visitor (`token`).
+-   [x] Cart items. --- `cart_items` with `UNIQUE (cart_id, product_id)`, so
+    adding the same product twice increments the line instead of duplicating it.
+-   [x] Add/update/remove/clear. --- All through one POST-only, CSRF-verified
+    endpoint (`cartaction.php`) that redirects afterwards.
+-   [x] Server-side price calculation. --- Every subtotal and total is computed
+    from the live `products.price`. `cart_items.price_at_add` is stored ONLY to
+    tell the customer a price moved; it never determines what they are charged.
+-   [x] Stock validation. --- Checked on add and update, and re-checked under a
+    `SELECT ... FOR UPDATE` row lock at checkout. The cart also surfaces
+    "only N left" and blocks checkout until it is fixed, on the server as well
+    as in the UI.
+-   [x] Cart persistence. --- Guest carts live 30 days in an httponly cookie;
+    customer carts persist in the database indefinitely.
+-   [x] Guest cart decision. --- **DECIDED: guest carts are supported.**
+    Requiring login before a visitor may collect items loses customers, and
+    retrofitting guest support later would mean rewriting the cart rather than
+    extending it. On login the guest cart is merged into the customer's cart
+    (quantities summed, then clamped to available stock) and discarded.
+
+Also delivered, because a cart nobody can check out from is not a feature:
+a working transactional checkout. `OrderService::placeOrderFromCart()` locks
+every product row in id order (avoiding deadlocks), re-reads every price,
+re-checks stock, writes a snapshot per line, and rolls the entire order back if
+any single line fails — partial success is impossible. One checkout shares one
+`order_reference`, so a three-product order reads as one order.
+
+### Deferred to Phase 3
+
+-   `single_order` still holds one row per product. The proper
+    `orders` + `order_items` restructure, with one payment row per order rather
+    than per line, is Phase 3.
+-   The shipping address is still the one captured at registration; the address
+    book is Phase 3.
+-   No order status machine yet — orders have no Pending/Shipped/Delivered
+    lifecycle.
+-   Adding to cart does not reserve stock. Stock is authoritative at checkout,
+    which is why the cart can warn "only N left" after the fact. Reservation is
+    listed as optional in §10 and would let abandoned carts block real sales.
 
 ## Phase 3 --- Checkout & Orders
 

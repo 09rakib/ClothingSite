@@ -41,6 +41,8 @@ abstract class DatabaseTestCase extends TestCase
             'payments',
             'single_order',
             'contact_messages',
+            'cart_items',
+            'carts',
             'product_images',
             'products',
             'categories',
