@@ -1,176 +1,52 @@
 <?php
-session_start();
-include "db.php";
+$pageTitle = 'Home';
+require_once __DIR__ . '/includes/header.php';
 
-/* Fetch products */
-$sql = "SELECT * FROM products";
-$result = mysqli_query($conn, $sql);
-if (!$result) {
-    die("Query failed: " . mysqli_error($conn));
-}
+/* Show a small preview of featured products on the home page */
+$stmt = $conn->prepare('SELECT id, name, description, price, stock, image FROM products ORDER BY created_at DESC LIMIT 3');
+$stmt->execute();
+$result = $stmt->get_result();
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Shirt & Pant Store</title>
 
-<style>
-*{
-    margin:0;
-    padding:0;
-    box-sizing:border-box;
-    font-family:Arial,sans-serif;
-}
-body{
-    background:#f4f4f4;
-    min-height:100vh;
-    display:flex;
-    flex-direction:column;
-}
+<section class="hero">
+    <h1>Quality Shirts &amp; Pants, Delivered to Your Door</h1>
+    <p>Everyday essentials made from comfortable fabric, at honest prices.</p>
+    <a href="shop.php" class="btn btn-outline">Browse All Products</a>
+</section>
 
-/* HEADER */
-header{
-    background:#1e3c72;
-    padding:15px 40px;
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    color:white;
-}
-.logo a{
-    color:white;
-    text-decoration:none;
-    font-size:22px;
-    font-weight:bold;
-}
-nav ul{
-    list-style:none;
-    display:flex;
-    gap:20px;
-}
-nav ul li a{
-    color:white;
-    text-decoration:none;
-    padding:6px 12px;
-    border-radius:4px;
-}
-nav ul li a:hover{
-    background:#2a5298;
-}
+<div class="container">
+    <h2 class="page-heading">Featured Products</h2>
+    <p class="page-subheading">A few of our customer favorites</p>
 
-/* MAIN */
-.main{
-    flex:1;
-    padding:40px;
-}
-.products{
-    display:grid;
-    grid-template-columns:repeat(auto-fit, minmax(220px,1fr));
-    gap:25px;
-}
-.product{
-    background:white;
-    padding:15px;
-    border-radius:8px;
-    box-shadow:0 0 10px rgba(0,0,0,0.1);
-    text-align:center;
-}
-.product img{
-    width:100%;
-    height:200px;
-    object-fit:cover;
-    border-radius:6px;
-}
-.product h2{
-    margin:10px 0;
-}
-.productprice{
-    font-weight:bold;
-    color:#1e3c72;
-}
-.product a{
-    display:block;
-    margin-top:10px;
-    padding:8px;
-    background:#1e3c72;
-    color:white;
-    text-decoration:none;
-    border-radius:4px;
-}
-.product a:hover{
-    background:#2a5298;
-}
-
-/* FOOTER */
-footer{
-    background:#222;
-    color:white;
-    text-align:center;
-    padding:20px;
-}
-</style>
-</head>
-
-<body>
-
-<!-- HEADER -->
-<header>
-    <div class="logo">
-        <a href="index.php">👕 Shirt & Pant Store</a>
-    </div>
-
-    <nav>
-        <ul>
-            <li><a href="index.php">Home</a></li>
-            <li><a href="shop.php">Shop</a></li>
-            <li><a href="blog.php">Blog</a></li>
-            <li><a href="about.php">About</a></li>
-            <li><a href="contact.php">Contact</a></li>
-
-
-            <?php if(isset($_SESSION['user_id'])){ ?>
-                <li><a href="logout.php">Logout</a></li>
-                <li><a href="myorder.php">cart</a></li>
-            <?php } else { ?>
-                <li><a href="login.php">Login</a></li>
-            <?php } ?>
-        </ul>
-    </nav>
-</header>
-
-<!-- MAIN CONTENT -->
-<main class="main">
-    <div class="products">
-        <?php while($row = mysqli_fetch_assoc($result)){ ?>
-            <div class="product">
-                <img src="image/<?php echo $row['image']; ?>" alt="">
-                <h2><?php echo $row['name']; ?></h2>
-                <p><?php echo $row['description']; ?></p>
-                <p>Stock: <?php echo $row['stock']; ?></p>
-                <p class="productprice">৳ <?php echo $row['price']; ?></p>
-
-                <?php if(isset($_SESSION['user_id'])){ ?>
-                    <!-- USER LOGGED IN -->
-                    <a href="singleorder.php?product_id=<?php echo $row['id']; ?>&price=<?php echo $row['price']; ?>">
-                        Buy Now
-                    </a>
-                <?php } else { ?>
-                    <!-- USER NOT LOGGED IN -->
-                    <a href="login.php">
-                        Buy Now
-                    </a>
-                <?php } ?>
+    <div class="product-grid">
+        <?php while ($row = $result->fetch_assoc()): ?>
+            <div class="product-card">
+                <img src="assets/images/products/<?php echo htmlspecialchars($row['image']); ?>" alt="<?php echo htmlspecialchars($row['name']); ?>">
+                <div class="product-body">
+                    <h3><?php echo htmlspecialchars($row['name']); ?></h3>
+                    <p class="product-desc"><?php echo htmlspecialchars($row['description']); ?></p>
+                    <div class="product-meta">
+                        <span class="product-price">&#2547; <?php echo number_format($row['price'], 2); ?></span>
+                        <span class="stock-badge <?php echo $row['stock'] < 5 ? 'low' : ''; ?>">
+                            <?php echo $row['stock'] > 0 ? $row['stock'] . ' in stock' : 'Out of stock'; ?>
+                        </span>
+                    </div>
+                    <?php if (isset($_SESSION['user_id'])): ?>
+                        <a href="singleorder.php?product_id=<?php echo (int) $row['id']; ?>" class="btn btn-block">Buy Now</a>
+                    <?php else: ?>
+                        <a href="login.php" class="btn btn-block">Login to Buy</a>
+                    <?php endif; ?>
+                </div>
             </div>
-        <?php } ?>
+        <?php endwhile; ?>
     </div>
-</main>
 
-<footer>
-    <p>© 2026 Shirt & Pant Store</p>
-    <p>Contact: support@shirtpantstore.com</p>
-</footer>
+    <p class="text-center mt-16">
+        <a href="shop.php" class="btn">View Full Shop</a>
+    </p>
+</div>
 
-</body>
-</html>
+<?php
+$stmt->close();
+require_once __DIR__ . '/includes/footer.php';
+?>

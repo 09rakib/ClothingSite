@@ -1,166 +1,105 @@
 <?php
-session_start();
-include "db.php";
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+require_once __DIR__ . '/includes/db.php';
 
-$error_message = "";
+$error_message = '';
 
 if (isset($_POST['submit'])) {
+    $email = trim($_POST['email'] ?? '');
+    $password = $_POST['password'] ?? '';
 
-    $email = $_POST['username'];
-    $password = $_POST['password'];
+    if ($email === '' || $password === '') {
+        $error_message = 'Email and password are required.';
+    } else {
+        $stmt = $conn->prepare('SELECT id, name, password, role FROM users WHERE email = ? LIMIT 1');
+        $stmt->bind_param('s', $email);
+        $stmt->execute();
+        $result = $stmt->get_result();
 
-    $sql = "SELECT * FROM users WHERE email = '$email'";
-    $result = mysqli_query($conn, $sql);
+        if ($result->num_rows === 1) {
+            $user = $result->fetch_assoc();
 
-    if (mysqli_num_rows($result) === 1) {
+            if (password_verify($password, $user['password'])) {
+                session_regenerate_id(true);
+                $_SESSION['user_id']   = $user['id'];
+                $_SESSION['user_name'] = $user['name'];
+                $_SESSION['user_role'] = $user['role'];
 
-        $row = mysqli_fetch_assoc($result);
-
-        if ($row['password'] === $password) {
-
-            // ✅ SET SESSION PROPERLY
-            $_SESSION['user_id']   = $row['id'];
-            $_SESSION['user_name'] = $row['name'];
-            $_SESSION['user_role'] = $row['role'];
-
-            // ✅ ADMIN REDIRECT
-            if ($row['role'] === 'admin') {
-                header("Location: admin/seller.php");
-                exit;
-            } else {
-                header("Location: index.php");
+                header('Location: ' . ($user['role'] === 'admin' ? 'admin/seller.php' : 'index.php'));
                 exit;
             }
 
+            $error_message = 'Incorrect password.';
         } else {
-            $error_message = "Wrong password";
+            $error_message = 'No account found with that email. Please register first.';
         }
-
-    } else {
-        $error_message = "User not found. Please register first.";
+        $stmt->close();
     }
 }
 ?>
-
-
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Login | Shirt & Pant Store</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: Arial, sans-serif; height: 100vh; overflow: hidden; }
-
-        .main-container { display: flex; height: 100vh; width: 100%; }
-
-        .left-section {
-            width: 50%;
-            background-image: url("image.png");
-            background-size: cover;
-            background-position: center;
-            background-repeat: no-repeat;
-        }
-
-        .right-section {
-            width: 50%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            background: #f5f5f5;
-        }
-
-        .login-container {
-            width: 320px;
-            padding: 30px;
-            background: white;
-            border-radius: 8px;
-            text-align: center;
-            box-shadow: 0 0 15px rgba(0,0,0,0.2);
-        }
-
-        .login-container h2 { margin-bottom: 20px; }
-
-        .login-container input {
-            width: 100%;
-            padding: 10px;
-            margin: 10px 0;
-        }
-
-        .login-container button {
-            width: 100%;
-            padding: 10px;
-            background: #2a5298;
-            color: white;
-            border: none;
-            cursor: pointer;
-        }
-
-        .login-container button:hover { background: #1e3c72; }
-
-        .note { margin-top: 15px; font-size: 14px; }
-        .error { color: red; margin-bottom: 15px; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login | Shirt &amp; Pant Store</title>
+<link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
 
-<div class="main-container">
-    <div class="left-section"></div>
+<div class="auth-wrap">
+    <div class="auth-banner">
+        <img src="assets/images/login-banner.png" alt="">
+        <div class="auth-banner-text">
+            <h2>Welcome Back</h2>
+            <p>Log in to track orders and check out faster.</p>
+        </div>
+    </div>
 
-    <div class="right-section">
-        <div class="login-container">
-            <h2>Welcome Back 👕👖</h2>
+    <div class="auth-panel">
+        <div class="auth-box">
+            <h1>Login</h1>
 
-            <?php if (!empty($error_message)) { ?>
-                <p class="error"><?php echo $error_message; ?></p>
-            <?php } ?>
+            <?php if ($error_message !== ''): ?>
+                <div class="alert alert-error"><?php echo htmlspecialchars($error_message); ?></div>
+            <?php endif; ?>
 
-        <form action="" method="POST" onsubmit="return validateForm()">
-            <input type="text" name="username" placeholder="Email" required>
-            <input type="password" name="password" placeholder="Password" required>
-            <button type="submit" name="submit">Login</button>
-        </form>
+            <form method="POST" action="login.php" onsubmit="return validateLoginForm()">
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit" name="submit" class="btn btn-block">Login</button>
+            </form>
 
-
-            <p class="note">New user? <a href="register.php">Register here</a></p>
+            <p class="note">New here? <a href="register.php">Create an account</a></p>
         </div>
     </div>
 </div>
+
 <script>
-function validateForm() {
-    let username = document.forms[0]["username"].value.trim();
-    let password = document.forms[0]["password"].value.trim();
+function validateLoginForm() {
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-    // email pattern
-    let emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (username === "") {
-        alert("Email is required");
+    if (!emailPattern.test(email)) {
+        alert('Please enter a valid email address.');
         return false;
     }
-
-    if (!emailPattern.test(username)) {
-        alert("Please enter a valid email address");
-        return false;
-    }
-
-    if (password === "") {
-        alert("Password is required");
-        return false;
-    }
-
     if (password.length < 6) {
-        alert("Password must be at least 6 characters");
+        alert('Password must be at least 6 characters.');
         return false;
     }
-
-    return true; // submit form
+    return true;
 }
 </script>
-
 
 </body>
 </html>

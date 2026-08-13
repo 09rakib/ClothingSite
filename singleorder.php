@@ -1,68 +1,79 @@
 <?php
-session_start();
-include "db.php";
+$pageTitle = 'Order Confirmation';
+require_once __DIR__ . '/includes/header.php';
 
-/* User must be logged in */
 if (!isset($_SESSION['user_id'])) {
-    header("Location: login.php");
+    header('Location: login.php');
     exit;
 }
 
-$user_id = $_SESSION['user_id'];
-
-/* Product must be selected */
 if (!isset($_GET['product_id'])) {
-    header("Location: index.php");
+    header('Location: shop.php');
     exit;
 }
 
+$user_id = (int) $_SESSION['user_id'];
 $product_id = (int) $_GET['product_id'];
+$errorMessage = '';
+$product = null;
 
-/* Get product info */
-$sql_product = "SELECT price, stock FROM products WHERE id = '$product_id'";
-$result_product = mysqli_query($conn, $sql_product);
+$stmt = $conn->prepare('SELECT name, price, stock FROM products WHERE id = ?');
+$stmt->bind_param('i', $product_id);
+$stmt->execute();
+$result = $stmt->get_result();
 
-if (!$result_product || mysqli_num_rows($result_product) == 0) {
-    die("Product not found");
+if ($result->num_rows === 0) {
+    $errorMessage = 'Product not found.';
+} else {
+    $product = $result->fetch_assoc();
+
+    if ($product['stock'] <= 0) {
+        $errorMessage = 'Sorry, this product is out of stock.';
+    } else {
+        $total_amount = $product['price'];
+
+        try {
+            $conn->begin_transaction();
+
+            $orderStmt = $conn->prepare('INSERT INTO single_order (user_id, product_id, total_amount) VALUES (?, ?, ?)');
+            $orderStmt->bind_param('iid', $user_id, $product_id, $total_amount);
+            $orderStmt->execute();
+            $order_id = $conn->insert_id;
+            $orderStmt->close();
+
+            $stockStmt = $conn->prepare('UPDATE products SET stock = stock - 1 WHERE id = ? AND stock > 0');
+            $stockStmt->bind_param('i', $product_id);
+            $stockStmt->execute();
+            $stockStmt->close();
+
+            $payment_method = 'cash_on_delivery';
+            $paymentStmt = $conn->prepare('INSERT INTO payments (order_id, user_id, total_amount, payment_method) VALUES (?, ?, ?, ?)');
+            $paymentStmt->bind_param('iids', $order_id, $user_id, $total_amount, $payment_method);
+            $paymentStmt->execute();
+            $paymentStmt->close();
+
+            $conn->commit();
+        } catch (mysqli_sql_exception $e) {
+            $conn->rollback();
+            $errorMessage = 'Something went wrong while placing your order. Please try again.';
+        }
+    }
 }
-
-$product = mysqli_fetch_assoc($result_product);
-
-/* Check stock */
-if ($product['stock'] <= 0) {
-    die("Product out of stock");
-}
-
-$total_amount = $product['price'];
-
-/* Insert order */
-$sql_order = "INSERT INTO single_order (user_id, product_id, total_amount)
-              VALUES ('$user_id', '$product_id', '$total_amount')";
-
-if (!mysqli_query($conn, $sql_order)) {
-    die("Order Error: " . mysqli_error($conn));
-}
-
-$order_id = mysqli_insert_id($conn);
-
-/* Reduce stock */
-$sql_update_stock = "UPDATE products 
-                     SET stock = stock - 1 
-                     WHERE id = '$product_id'";
-
-if (!mysqli_query($conn, $sql_update_stock)) {
-    die("Stock Update Error: " . mysqli_error($conn));
-}
-
-/* Insert payment */
-$payment_method = "cash_on_delivery";
-
-$sql_payment = "INSERT INTO payments (order_id, user_id,total_amount, payment_method)
-                VALUES ('$order_id', '$user_id','$total_amount' ,'$payment_method')";
-
-if (!mysqli_query($conn, $sql_payment)) {
-    die("Payment Error: " . mysqli_error($conn));
-}
-
-echo " Order placed successfully! <a href='index.php'>Buy More</a>";
+$stmt->close();
 ?>
+
+<div class="container-narrow text-center">
+    <?php if ($errorMessage !== ''): ?>
+        <div class="alert alert-error"><?php echo htmlspecialchars($errorMessage); ?></div>
+        <a href="shop.php" class="btn">Back to Shop</a>
+    <?php else: ?>
+        <div class="alert alert-success">
+            Order placed successfully! <strong><?php echo htmlspecialchars($product['name']); ?></strong>
+            (&#2547; <?php echo number_format($total_amount, 2); ?>) will be delivered via cash on delivery.
+        </div>
+        <a href="myorder.php" class="btn">View My Orders</a>
+        <a href="shop.php" class="btn btn-outline" style="background:var(--color-primary); margin-left:8px;">Buy More</a>
+    <?php endif; ?>
+</div>
+
+<?php require_once __DIR__ . '/includes/footer.php'; ?>

@@ -1,0 +1,655 @@
+/* =========================================================
+   Shirt & Pant Store — Global Stylesheet
+   One design system shared by every page (site + admin panel)
+   ========================================================= */
+
+:root {
+    --color-primary: #1e3c72;
+    --color-primary-dark: #16305c;
+    --color-primary-light: #2a5298;
+    --color-accent: #d97706;
+    --color-accent-dark: #b45309;
+
+    --color-bg: #f5f6f8;
+    --color-surface: #ffffff;
+    --color-text: #1f2937;
+    --color-text-muted: #6b7280;
+    --color-border: #e5e7eb;
+
+    --color-success: #16a34a;
+    --color-success-dark: #15803d;
+    --color-danger: #dc2626;
+    --color-danger-dark: #b91c1c;
+
+    --radius-sm: 4px;
+    --radius: 8px;
+    --shadow-sm: 0 1px 3px rgba(16, 24, 40, 0.08);
+    --shadow-md: 0 4px 16px rgba(16, 24, 40, 0.10);
+
+    --font-base: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-base);
+    background: var(--color-bg);
+    color: var(--color-text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.5;
+}
+
+a {
+    color: inherit;
+}
+
+img {
+    max-width: 100%;
+    display: block;
+}
+
+/* ---------- Site header / nav ---------- */
+.site-header {
+    background: var(--color-primary);
+    color: #fff;
+    padding: 14px 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.site-header .logo a {
+    color: #fff;
+    text-decoration: none;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}
+
+.site-header nav ul {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.site-header nav ul li a {
+    color: #fff;
+    text-decoration: none;
+    padding: 8px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 14.5px;
+    transition: background 0.2s ease;
+}
+
+.site-header nav ul li a:hover,
+.site-header nav ul li a.active {
+    background: var(--color-primary-light);
+}
+
+.site-header nav ul li a.cta {
+    background: var(--color-accent);
+}
+
+.site-header nav ul li a.cta:hover {
+    background: var(--color-accent-dark);
+}
+
+/* ---------- Main / layout ---------- */
+.site-main {
+    flex: 1;
+    width: 100%;
+}
+
+.container {
+    max-width: 1150px;
+    margin: 0 auto;
+    padding: 40px 24px;
+}
+
+.container-narrow {
+    max-width: 620px;
+    margin: 0 auto;
+    padding: 40px 24px;
+}
+
+.page-heading {
+    margin-bottom: 6px;
+    font-size: 26px;
+    color: var(--color-primary);
+}
+
+.page-subheading {
+    color: var(--color-text-muted);
+    margin-bottom: 28px;
+}
+
+/* ---------- Hero (home page) ---------- */
+.hero {
+    background: linear-gradient(120deg, var(--color-primary), var(--color-primary-light));
+    color: #fff;
+    padding: 70px 24px;
+    text-align: center;
+}
+
+.hero h1 {
+    font-size: 34px;
+    margin-bottom: 12px;
+}
+
+.hero p {
+    font-size: 16px;
+    opacity: 0.9;
+    max-width: 520px;
+    margin: 0 auto 26px;
+}
+
+.hero .btn {
+    display: inline-block;
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+    display: inline-block;
+    padding: 10px 22px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-primary);
+    color: #fff;
+    text-decoration: none;
+    font-size: 14.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    text-align: center;
+}
+
+.btn:hover {
+    background: var(--color-primary-dark);
+}
+
+.btn-block {
+    display: block;
+    width: 100%;
+}
+
+.btn-outline {
+    background: transparent;
+    color: #fff;
+    border: 1.5px solid #fff;
+}
+
+.btn-outline:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.btn-success {
+    background: var(--color-success);
+}
+
+.btn-success:hover {
+    background: var(--color-success-dark);
+}
+
+.btn-danger {
+    background: var(--color-danger);
+}
+
+.btn-danger:hover {
+    background: var(--color-danger-dark);
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 13px;
+}
+
+/* ---------- Product grid / cards ---------- */
+.product-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 24px;
+    margin-top: 10px;
+}
+
+.product-card {
+    background: var(--color-surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.product-card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+}
+
+.product-card img {
+    width: 100%;
+    height: 210px;
+    object-fit: cover;
+}
+
+.product-card .product-body {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+}
+
+.product-card h3 {
+    font-size: 16.5px;
+    margin-bottom: 6px;
+}
+
+.product-card .product-desc {
+    color: var(--color-text-muted);
+    font-size: 13.5px;
+    margin-bottom: 10px;
+    flex: 1;
+}
+
+.product-card .product-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    font-size: 13px;
+}
+
+.product-price {
+    font-weight: 700;
+    color: var(--color-primary);
+    font-size: 16px;
+}
+
+.stock-badge {
+    font-size: 12px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #ecfdf5;
+    color: var(--color-success-dark);
+}
+
+.stock-badge.low {
+    background: #fef2f2;
+    color: var(--color-danger-dark);
+}
+
+/* ---------- Forms ---------- */
+.form-group {
+    margin-bottom: 14px;
+    text-align: left;
+}
+
+.form-group label {
+    display: block;
+    font-size: 13.5px;
+    font-weight: 600;
+    margin-bottom: 5px;
+    color: var(--color-text);
+}
+
+input, textarea, select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-size: 14px;
+    background: #fff;
+    color: var(--color-text);
+}
+
+input:focus, textarea:focus, select:focus {
+    outline: none;
+    border-color: var(--color-primary-light);
+    box-shadow: 0 0 0 3px rgba(42, 82, 152, 0.15);
+}
+
+textarea {
+    resize: vertical;
+    min-height: 90px;
+}
+
+/* ---------- Alerts ---------- */
+.alert {
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    margin-bottom: 16px;
+}
+
+.alert-success {
+    background: #ecfdf5;
+    color: var(--color-success-dark);
+    border: 1px solid #a7f3d0;
+}
+
+.alert-error {
+    background: #fef2f2;
+    color: var(--color-danger-dark);
+    border: 1px solid #fecaca;
+}
+
+/* ---------- Auth pages (login / register) ---------- */
+.auth-wrap {
+    display: flex;
+    min-height: 100vh;
+    width: 100%;
+}
+
+.auth-banner {
+    width: 45%;
+    background: linear-gradient(120deg, var(--color-primary), var(--color-primary-light));
+    display: flex;
+    align-items: flex-end;
+    padding: 40px;
+}
+
+.auth-banner img {
+    position: absolute;
+    inset: 0;
+    width: 45%;
+    height: 100vh;
+    object-fit: cover;
+    opacity: 0.35;
+}
+
+.auth-banner-text {
+    position: relative;
+    color: #fff;
+    z-index: 1;
+}
+
+.auth-banner-text h2 {
+    font-size: 24px;
+    margin-bottom: 6px;
+}
+
+.auth-panel {
+    width: 55%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 30px;
+    background: var(--color-bg);
+}
+
+.auth-box {
+    width: 100%;
+    max-width: 380px;
+    background: var(--color-surface);
+    padding: 34px;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    text-align: center;
+}
+
+.auth-box h1 {
+    font-size: 22px;
+    margin-bottom: 20px;
+    color: var(--color-primary);
+}
+
+.auth-box .note {
+    margin-top: 16px;
+    font-size: 13.5px;
+    color: var(--color-text-muted);
+}
+
+.auth-box .note a {
+    color: var(--color-primary);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+@media (max-width: 800px) {
+    .auth-banner { display: none; }
+    .auth-panel { width: 100%; }
+}
+
+/* ---------- Static content pages (about/blog/contact) ---------- */
+.info-section {
+    margin-bottom: 34px;
+}
+
+.info-section h2 {
+    color: var(--color-primary);
+    font-size: 20px;
+    margin-bottom: 10px;
+}
+
+.info-section p {
+    color: var(--color-text);
+    margin-bottom: 10px;
+}
+
+.value-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 18px;
+    margin-top: 16px;
+}
+
+.value-card {
+    background: var(--color-surface);
+    border-radius: var(--radius);
+    padding: 18px;
+    box-shadow: var(--shadow-sm);
+}
+
+.value-card h3 {
+    font-size: 15px;
+    margin-bottom: 6px;
+    color: var(--color-primary);
+}
+
+.value-card p {
+    font-size: 13.5px;
+    color: var(--color-text-muted);
+}
+
+.blog-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 22px;
+}
+
+.blog-card {
+    background: var(--color-surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    padding: 20px;
+}
+
+.blog-card .blog-date {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    margin-bottom: 8px;
+}
+
+.blog-card h3 {
+    font-size: 16px;
+    margin-bottom: 8px;
+    color: var(--color-primary);
+}
+
+.blog-card p {
+    font-size: 13.5px;
+    color: var(--color-text-muted);
+}
+
+.contact-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 30px;
+}
+
+.contact-info-card {
+    background: var(--color-surface);
+    border-radius: var(--radius);
+    padding: 22px;
+    box-shadow: var(--shadow-sm);
+    height: fit-content;
+}
+
+.contact-info-card p {
+    margin-bottom: 10px;
+    font-size: 14px;
+}
+
+.contact-info-card strong {
+    color: var(--color-primary);
+}
+
+@media (max-width: 720px) {
+    .contact-grid { grid-template-columns: 1fr; }
+}
+
+/* ---------- Tables (orders, product list) ---------- */
+.table-wrap {
+    background: var(--color-surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 560px;
+}
+
+th, td {
+    padding: 12px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--color-border);
+    font-size: 14px;
+}
+
+th {
+    background: var(--color-primary);
+    color: #fff;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 0.4px;
+}
+
+tr:last-child td {
+    border-bottom: none;
+}
+
+tr:hover td {
+    background: #fafbfc;
+}
+
+.table-img {
+    width: 52px;
+    height: 52px;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
+}
+
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--color-text-muted);
+}
+
+/* ---------- Admin panel layout ---------- */
+.admin-layout {
+    display: flex;
+    min-height: 100vh;
+    width: 100%;
+}
+
+.admin-sidebar {
+    width: 230px;
+    flex-shrink: 0;
+    background: var(--color-primary);
+    color: #fff;
+    padding: 26px 0;
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    overflow-y: auto;
+}
+
+.admin-sidebar h2 {
+    text-align: center;
+    font-size: 17px;
+    margin-bottom: 26px;
+    padding: 0 16px;
+}
+
+.admin-sidebar ul {
+    list-style: none;
+}
+
+.admin-sidebar ul li a {
+    display: block;
+    padding: 12px 24px;
+    color: #e5ecf7;
+    text-decoration: none;
+    font-size: 14.5px;
+    transition: background 0.2s ease;
+}
+
+.admin-sidebar ul li a:hover,
+.admin-sidebar ul li a.active {
+    background: var(--color-primary-light);
+    color: #fff;
+}
+
+.admin-main {
+    margin-left: 230px;
+    padding: 34px;
+    width: 100%;
+    max-width: 100%;
+}
+
+.admin-card {
+    background: var(--color-surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    padding: 26px;
+    max-width: 520px;
+}
+
+@media (max-width: 800px) {
+    .admin-sidebar { position: static; width: 100%; height: auto; }
+    .admin-main { margin-left: 0; padding: 20px; }
+}
+
+/* ---------- Footer ---------- */
+.site-footer {
+    background: #1a1f2b;
+    color: #cbd5e1;
+    text-align: center;
+    padding: 22px;
+    font-size: 13.5px;
+}
+
+.site-footer p + p {
+    margin-top: 4px;
+}
+
+/* ---------- Utility ---------- */
+.text-center { text-align: center; }
+.mt-16 { margin-top: 16px; }
+.mb-16 { margin-bottom: 16px; }

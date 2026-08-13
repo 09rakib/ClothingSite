@@ -1,165 +1,131 @@
 <?php
-include "db.php";
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+require_once __DIR__ . '/includes/db.php';
+
+$error_message = '';
+$success_message = '';
 
 if (isset($_POST['submit'])) {
+    $name     = trim($_POST['fullname'] ?? '');
+    $email    = trim($_POST['email'] ?? '');
+    $phone    = trim($_POST['phone'] ?? '');
+    $address  = trim($_POST['address'] ?? '');
+    $password = $_POST['password'] ?? '';
+    $confirm  = $_POST['confirm'] ?? '';
 
-    $name     = $_POST['fullname'];
-    $email    = $_POST['email'];
-    $password = $_POST['password'];
-    $phone    = $_POST['phone'];
-    $address  = $_POST['address'];
-    $role     = "user";
-
-    $check = "SELECT id FROM users WHERE email='$email'";
-    $checkResult = mysqli_query($conn, $check);
-
-    if (mysqli_num_rows($checkResult) > 0) {
-        $msg="this email is already used";
-
-        if (isset($_POST['submit']) && isset($msg)) {
-    echo "<script>alert('$msg');</script>";
-}
-
+    if ($name === '' || $email === '' || $phone === '' || $address === '' || $password === '') {
+        $error_message = 'All fields are required.';
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $error_message = 'Please enter a valid email address.';
+    } elseif (strlen($password) < 6) {
+        $error_message = 'Password must be at least 6 characters.';
+    } elseif ($password !== $confirm) {
+        $error_message = 'Passwords do not match.';
     } else {
+        $check = $conn->prepare('SELECT id FROM users WHERE email = ? LIMIT 1');
+        $check->bind_param('s', $email);
+        $check->execute();
+        $check->store_result();
 
-        $sql = "INSERT INTO users (name,email,password,phone,address,role)
-                VALUES ('$name','$email','$password','$phone','$address','$role')";
-
-        if (mysqli_query($conn, $sql)) {
-            echo "Registered successfully";
+        if ($check->num_rows > 0) {
+            $error_message = 'This email is already registered.';
         } else {
-            echo "Error: " . mysqli_error($conn);
+            $hashed = password_hash($password, PASSWORD_DEFAULT);
+            $insert = $conn->prepare('INSERT INTO users (name, email, password, phone, address, role) VALUES (?, ?, ?, ?, ?, "user")');
+            $insert->bind_param('sssss', $name, $email, $hashed, $phone, $address);
+
+            if ($insert->execute()) {
+                $success_message = 'Registration successful! You can now log in.';
+            } else {
+                $error_message = 'Something went wrong. Please try again.';
+            }
+            $insert->close();
         }
+        $check->close();
     }
 }
 ?>
-
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Customer Register | Shirt & Pant Store</title>
-
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #ff7e5f, #feb47b);
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        .shoplink{
-            display: block;
-            width: 100px;
-            position: fixed;
-            top: 25px;
-            left: 45%;
-            text-align: center;
-            text-decoration: none;
-            background-color: lightgreen;
-            padding: 10px;
-
-        }
-
-        .register-box {
-            background: #fff;
-            padding: 30px;
-            width: 350px;
-            border-radius: 8px;
-            text-align: center;
-        }
-
-        .register-box h2 {
-            margin-bottom: 20px;
-        }
-
-        .register-box input {
-            width: 95%;
-            padding: 10px;
-            margin: 8px 0;
-        }
-
-        .register-box button {
-            width: 100%;
-            padding: 10px;
-            background: #ff7e5f;
-            color: white;
-            border: none;
-            cursor: pointer;
-        }
-
-        .register-box button:hover {
-            background: #e96b4f;
-        }
-
-        .message {
-            margin-top: 15px;
-            color: green;
-            font-weight: bold;
-        }
-
-        .note {
-            margin-top: 10px;
-            font-size: 14px;
-        }
-    </style>
-
-    <script>
-        function validateForm() {
-            let fullname = document.getElementById("fullname").value;
-            let email = document.getElementById("email").value;
-              let password = document.getElementById("password").value;
-            // let username = document.getElementById("username").value;
-            let phone = document.getElementById("phone").value;
-            let address = document.getElementById("address").value;
-          
-            let confirm = document.getElementById("confirm").value;
-
-
-            if (fullname === "" || email === "" || password === ""|| phone === "" || address === "" ) {
-                alert("All fields are required!");
-                return false;
-            }
-
-            if (password.length < 5) {
-                alert("Password must be at least 5 characters");
-                return false;
-            }
-
-            if (password !== confirm) {
-                alert("Passwords do not match!");
-                return false;
-            }
-
-            return true;
-        }
-    </script>
-
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Register | Shirt &amp; Pant Store</title>
+<link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
 
-<div class="register-box">
-    
-    <a class="shoplink" href="index.php">shop</a>
-    
-    <h2>Create Account 🛍️</h2>
+<div class="auth-wrap">
+    <div class="auth-banner">
+        <img src="assets/images/login-banner.png" alt="">
+        <div class="auth-banner-text">
+            <h2>Join Us</h2>
+            <p>Create an account to start ordering.</p>
+        </div>
+    </div>
 
-    <form method="POST" onsubmit="return validateForm()">
-        <input type="text" name="fullname" id="fullname" placeholder="Full Name">
-        <input type="email" name="email" id="email" placeholder="Email">
-        <!-- <input type="text" name="username" id="username" placeholder="Username"> -->
-        <input type="text" name="phone" id="phone" placeholder="Enter Your Phone Number">
-        <input type="text" name="address" id="address" placeholder="Enter Your Address">
-        <input type="password" name="password" id="password" placeholder="Password">
-        <input type="password" id="confirm" placeholder="Confirm Password">
-        <button type="submit" name="submit" id ="submit">Register</button>
-    </form>
+    <div class="auth-panel">
+        <div class="auth-box">
+            <h1>Create Account</h1>
 
-  
-    <p class="note">Already have an account? <a href="login.php">Login</a></p>
+            <?php if ($error_message !== ''): ?>
+                <div class="alert alert-error"><?php echo htmlspecialchars($error_message); ?></div>
+            <?php endif; ?>
+            <?php if ($success_message !== ''): ?>
+                <div class="alert alert-success"><?php echo htmlspecialchars($success_message); ?></div>
+            <?php endif; ?>
+
+            <form method="POST" action="register.php" onsubmit="return validateRegisterForm()">
+                <div class="form-group">
+                    <label for="fullname">Full Name</label>
+                    <input type="text" id="fullname" name="fullname" required>
+                </div>
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="phone">Phone Number</label>
+                    <input type="text" id="phone" name="phone" required>
+                </div>
+                <div class="form-group">
+                    <label for="address">Address</label>
+                    <input type="text" id="address" name="address" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <div class="form-group">
+                    <label for="confirm">Confirm Password</label>
+                    <input type="password" id="confirm" name="confirm" required>
+                </div>
+                <button type="submit" name="submit" class="btn btn-block">Register</button>
+            </form>
+
+            <p class="note">Already have an account? <a href="login.php">Login</a></p>
+        </div>
+    </div>
 </div>
+
+<script>
+function validateRegisterForm() {
+    const password = document.getElementById('password').value;
+    const confirm = document.getElementById('confirm').value;
+
+    if (password.length < 6) {
+        alert('Password must be at least 6 characters.');
+        return false;
+    }
+    if (password !== confirm) {
+        alert('Passwords do not match.');
+        return false;
+    }
+    return true;
+}
+</script>
 
 </body>
 </html>

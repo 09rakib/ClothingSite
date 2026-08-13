@@ -1,175 +1,85 @@
 <?php
-session_start();
-include "../db.php";
+$pageTitle = 'Add Product';
+require_once __DIR__ . '/../includes/admin-header.php';
 
-if (!isset($_SESSION['user_id']) || $_SESSION['user_role'] !== "admin") {
-    header("Location: ../index.php");
-    exit;
-}
+$success = '';
+$error = '';
 
-$sql1 = "SELECT id, name FROM categories";
-$result1 = mysqli_query($conn, $sql1);
+$categories = $conn->query('SELECT id, name FROM categories ORDER BY name');
 
 if (isset($_POST['submit'])) {
+    $name        = trim($_POST['name'] ?? '');
+    $description = trim($_POST['description'] ?? '');
+    $price       = $_POST['price'] ?? '';
+    $stock       = $_POST['stock'] ?? '';
+    $category_id = $_POST['category_id'] ?? '';
 
-   $name = mysqli_real_escape_string($conn, $_POST['name']);
-$description = mysqli_real_escape_string($conn, $_POST['description']);
-
-    $price       = $_POST['price'];
-    $stock       = $_POST['stock'];
-    $category_id = $_POST['category_id'];
-    $image = $_FILES['image']['name'];
-    $tmp   = $_FILES['image']['tmp_name'];
-    $path  = "../image/" . $image;
-    $sql = "INSERT INTO products 
-            (name, description, price, stock, image, category_id) 
-            VALUES 
-            ('$name', '$description', '$price', '$stock', '$image', '$category_id')";
-
-    if (mysqli_query($conn, $sql)) {
-        move_uploaded_file($tmp, $path);
-        $success = "Product added successfully!";
+    if ($name === '' || $description === '' || $price === '' || $stock === '' || $category_id === '' || empty($_FILES['image']['name'])) {
+        $error = 'All fields, including an image, are required.';
     } else {
-        $error = "Error: " . mysqli_error($conn);
+        $imageName = time() . '_' . preg_replace('/[^A-Za-z0-9._-]/', '', basename($_FILES['image']['name']));
+        $uploadPath = __DIR__ . '/../assets/images/products/' . $imageName;
+
+        if (move_uploaded_file($_FILES['image']['tmp_name'], $uploadPath)) {
+            $stmt = $conn->prepare('INSERT INTO products (name, description, price, stock, image, category_id) VALUES (?, ?, ?, ?, ?, ?)');
+            $stmt->bind_param('ssdisi', $name, $description, $price, $stock, $imageName, $category_id);
+
+            if ($stmt->execute()) {
+                $success = 'Product added successfully!';
+            } else {
+                $error = 'Could not save the product. Please try again.';
+            }
+            $stmt->close();
+        } else {
+            $error = 'Image upload failed. Please try again.';
+        }
     }
 }
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>seller Dashboard</title>
 
-<style>
-*{
-    margin:0;
-    padding:0;
-    box-sizing:border-box;
-    font-family:Arial,sans-serif;
-}
-body{
-    background:#f4f6f8;
-    display:flex;
-}
-.dashboard_sidebar{
-    width:240px;
-    height:100vh;
-    background:#1e3c72;
-    padding-top:30px;
-    position:fixed;
-}
-.dashboard_sidebar h2{
-    color:#fff;
-    text-align:center;
-    margin-bottom:30px;
-}
-.dashboard_sidebar ul{
-    list-style:none;
-}
-.dashboard_sidebar ul li a{
-    display:block;
-    padding:12px 20px;
-    color:#fff;
-    text-decoration:none;
-}
-.dashboard_sidebar ul li a:hover{
-    background:rgba(255,255,255,0.2);
-}
-.dashboard_main{
-    margin-left:240px;
-    padding:40px;
-    width:100%;
-}
-form{
-    background:#fff;
-    padding:25px;
-    max-width:500px;
-    border-radius:8px;
-    box-shadow:0 4px 10px rgba(0,0,0,.1);
-}
-input, textarea, select{
-    width:100%;
-    padding:10px;
-    margin-bottom:15px;
-    border:1px solid #ccc;
-    border-radius:5px;
-}
-textarea{
-    height:100px;
-    resize:none;
-}
-input[type=submit]{
-    background:#1e3c72;
-    color:#fff;
-    border:none;
-    cursor:pointer;
-    font-weight:bold;
-}
-input[type=submit]:hover{
-    background:#16305c;
-}
-.msg{
-    margin-bottom:15px;
-    font-weight:bold;
-}
-.success{color:green;}
-.error{color:red;}
-</style>
-</head>
+<h1 class="page-heading">Add Product</h1>
+<p class="page-subheading">Create a new product listing</p>
 
-<body>
+<div class="admin-card">
+    <?php if ($success !== ''): ?>
+        <div class="alert alert-success"><?php echo htmlspecialchars($success); ?></div>
+    <?php endif; ?>
+    <?php if ($error !== ''): ?>
+        <div class="alert alert-error"><?php echo htmlspecialchars($error); ?></div>
+    <?php endif; ?>
 
-<div class="dashboard_sidebar">
-    <h2>SELLER Panel</h2>
-    <ul>
-        <li><a href="seller.php">home</a></li>
-        <li><a href="addProduct.php">Add Product</a></li>
-        <li><a href="displayproduct.php">View Products</a></li>
-        <li><a href="#">Feedback</a></li>
-        <li><a href="#">Promotion</a></li>
-        <li><a href="../logout.php">Logout</a></li>
-    </ul>
+    <form method="post" enctype="multipart/form-data" id="productForm">
+        <div class="form-group">
+            <label for="name">Product Name</label>
+            <input type="text" name="name" id="name" required>
+        </div>
+        <div class="form-group">
+            <label for="description">Description</label>
+            <textarea name="description" id="description" required></textarea>
+        </div>
+        <div class="form-group">
+            <label for="price">Price (&#2547;)</label>
+            <input type="number" step="0.01" min="0" name="price" id="price" required>
+        </div>
+        <div class="form-group">
+            <label for="stock">Stock</label>
+            <input type="number" min="0" name="stock" id="stock" required>
+        </div>
+        <div class="form-group">
+            <label for="image">Product Image</label>
+            <input type="file" name="image" id="image" accept="image/*" required>
+        </div>
+        <div class="form-group">
+            <label for="category_id">Category</label>
+            <select name="category_id" id="category_id" required>
+                <option value="">Select Category</option>
+                <?php while ($row = $categories->fetch_assoc()): ?>
+                    <option value="<?php echo (int) $row['id']; ?>"><?php echo htmlspecialchars($row['name']); ?></option>
+                <?php endwhile; ?>
+            </select>
+        </div>
+        <button type="submit" name="submit" class="btn btn-block">Add Product</button>
+    </form>
 </div>
 
-<div class="dashboard_main">
-
-<?php if(isset($success)) echo "<div class='msg success'>$success</div>"; ?>
-<?php if(isset($error)) echo "<div class='msg error'>$error</div>"; ?>
-
-<form method="post" enctype="multipart/form-data" id="productForm">
-
-        <input type="text" name="name" id="name" placeholder="Product Name">
-        <textarea name="description" id="description" placeholder="Product Description"></textarea>
-        <input type="number" name="price" id="price" placeholder="Price">
-        <input type="number" name="stock" id="stock" placeholder="Stock">
-        <input type="file" name="image" id="image">
-        <select name="category_id" id="category_id">
-
-        <option value="">Select Category</option>
-        <?php while($row = mysqli_fetch_assoc($result1)) { ?>
-            <option value="<?= $row['id']; ?>">
-                <?= $row['name']; ?>
-            </option>
-        <?php } ?>
-    </select>
-
-    <input type="submit" name="submit" value="Add Product">
-</form>
-
-</div>
-
-<script>
-document.getElementById("productForm").onsubmit = function () {
-
-    let inputs = document.querySelectorAll("#productForm input, #productForm textarea, #productForm select");
-    for (let i = 0; i < inputs.length; i++) {
-        if (inputs[i].value.trim() === "") {
-            alert("All fields are required");
-            return false;
-        }
-    }
-    return true;
-};
-</script>
-</body>
-</html>
+<?php require_once __DIR__ . '/../includes/admin-footer.php'; ?>

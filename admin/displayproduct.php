@@ -1,209 +1,53 @@
 <?php
-session_start();
-include "../db.php";
-if(isset($_SESSION['user_id'])){
+$pageTitle = 'View Products';
+require_once __DIR__ . '/../includes/admin-header.php';
 
-
-if ($_SESSION['user_role'] == "admin") {
-
-        $sql = "select * from products";
-        $result = mysqli_query($conn, $sql);
-        if(!$result){
-            echo "Error!: {$conn->error}";
-        }
-        else{
-            // move_uploaded_file($temp_location,$upload_location.$image);
-
-        }
-    }
-    else{
-        echo "go for user dashboard";
-
-    }
-    
-
-}
-else{
-        header("location: ../index.php " );
-    }
-        
+$result = $conn->query(
+    'SELECT p.id, p.name, p.description, p.price, p.stock, p.image, c.name AS category_name
+     FROM products p
+     LEFT JOIN categories c ON p.category_id = c.id
+     ORDER BY p.created_at DESC'
+);
 ?>
 
+<h1 class="page-heading">Products</h1>
+<p class="page-subheading">All items currently listed in the store</p>
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-
-   <style>
-/* Reset */
-*{
-    margin:0;
-    padding:0;
-    box-sizing:border-box;
-    font-family: Arial, sans-serif;
-}
-
-/* Body layout */
-body{
-    background:#f4f6f8;
-    display:flex;
-}
-
-/* Sidebar */
-.dashboard_sidebar{
-    width:240px;
-    height:100vh;
-    background:#1e3c72;
-    padding-top:30px;
-    position:fixed;
-    left:0;
-    top:0;
-}
-
-.dashboard_sidebar h2{
-    color:#fff;
-    text-align:center;
-    margin-bottom:30px;
-    font-size:20px;
-}
-
-.dashboard_sidebar ul{
-    list-style:none;
-}
-
-.dashboard_sidebar ul li{
-    margin:10px 0;
-}
-
-.dashboard_sidebar ul li a{
-    display:block;
-    padding:12px 20px;
-    color:#fff;
-    text-decoration:none;
-}
-
-.dashboard_sidebar ul li a:hover{
-    background:rgba(255,255,255,0.2);
-}
-
-/* Main content */
-.main_content{
-    margin-left:240px;
-    padding:30px;
-    width:calc(100% - 240px);
-}
-
-/* Table */
-table{
-    width:100%;
-    border-collapse:collapse;
-    background:#fff;
-}
-
-th, td{
-    border:1px solid #ddd;
-    padding:10px;
-    text-align:left;
-}
-
-th{
-    background:#1e3c72;
-    color:#fff;
-    text-transform:capitalize;
-}
-
-/* Image size fix */
-.product-img{
-    width:60px;
-    height:60px;
-    object-fit:cover;
-    border-radius:4px;
-}
-
-/* Buttons */
-.update{
-    text-decoration:none;
-    color:#fff;
-    background:#28a745;
-    padding:6px 10px;
-    border-radius:4px;
-    font-size:14px;
-}
-
-.delete{
-    text-decoration:none;
-    color:#fff;
-    background:#dc3545;
-    padding:6px 10px;
-    border-radius:4px;
-    font-size:14px;
-}
-
-.update:hover{
-    background:#218838;
-}
-
-.delete:hover{
-    background:#c82333;
-}
-</style>
-
-</head>
-<body>
-        <!-- Sidebar -->
-    <div class="dashboard_sidebar">
-        <h2>SELLER Panel</h2>
-        <ul>
-            <li><a href="seller.php">home</a></li>
-            <li><a href="addProduct.php">Add Product</a></li>
-            <li><a href="displayproduct.php">View Products</a></li>
-            <li><a href="#">Feedback</a></li>
-            <li><a href="#">Promotion</a></li>
-            <li><a href="../logout.php">Logout</a></li>
-        </ul>
+<?php if ($result->num_rows === 0): ?>
+    <div class="empty-state">
+        No products yet.<br>
+        <a href="addProduct.php" class="btn mt-16">Add Your First Product</a>
     </div>
-
-    <!-- Main Content -->
-    <div class="main_content">
-         <table>
-        <thead>
-            <tr>
-                <th> product title </th>
-                <th> product description </th>
-                <th> price </th>
-                <th> stock </th>
-                <th> image </th>
-                <th> categorie name </th>
-                <th>action</th>
-                <th>action</th>
-                
-            </tr>
-            <tbody>
-                <?php while($row=mysqli_fetch_assoc($result)){
-                    ?>
+<?php else: ?>
+    <div class="table-wrap">
+        <table>
+            <thead>
                 <tr>
-                    <td><?php echo $row['name'] ?></td>
-                    <td><?php echo $row['description'] ?></td>
-                    <td><?php echo $row['price'] ?></td>
-                    <td><?php echo $row['stock'] ?></td>
-                    <td>
-                    <img src="../image/<?php echo $row['image']; ?>" class="product-img">
-                    </td>
-                    <td><?php echo $row['category_id'] ?></td>
-                    <td><a class="update" href="updateproduct.php?product_id=<?php echo $row['id']?>">update</a></td>
-                    <td><a class="delete" href="deleteproduct.php?product_id=<?php echo $row['id'] ?>">delete</a></td>
+                    <th>Image</th>
+                    <th>Name</th>
+                    <th>Category</th>
+                    <th>Price</th>
+                    <th>Stock</th>
+                    <th>Actions</th>
                 </tr>
-                <?php }?>
+            </thead>
+            <tbody>
+                <?php while ($row = $result->fetch_assoc()): ?>
+                    <tr>
+                        <td><img src="../assets/images/products/<?php echo htmlspecialchars($row['image']); ?>" class="table-img" alt=""></td>
+                        <td><?php echo htmlspecialchars($row['name']); ?></td>
+                        <td><?php echo htmlspecialchars($row['category_name'] ?? 'Uncategorized'); ?></td>
+                        <td>&#2547; <?php echo number_format($row['price'], 2); ?></td>
+                        <td><?php echo (int) $row['stock']; ?></td>
+                        <td>
+                            <a href="updateproduct.php?product_id=<?php echo (int) $row['id']; ?>" class="btn btn-sm btn-success">Update</a>
+                            <a href="deleteproduct.php?product_id=<?php echo (int) $row['id']; ?>" class="btn btn-sm btn-danger" onclick="return confirm('Delete this product?');">Delete</a>
+                        </td>
+                    </tr>
+                <?php endwhile; ?>
             </tbody>
-        </thead>
-    </table>
+        </table>
     </div>
+<?php endif; ?>
 
-
-
-  
-</body>
-</html>
+<?php require_once __DIR__ . '/../includes/admin-footer.php'; ?>
