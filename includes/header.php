@@ -72,7 +72,8 @@ $metaDescription = $metaDescription
                 <?php if (Auth::isAdmin()): ?>
                     <li><a href="admin/seller.php" class="cta">Admin Panel</a></li>
                 <?php else: ?>
-                    <li><a href="myorder.php" class="<?= $currentPage === 'myorder.php' ? 'active' : '' ?>">My Orders</a></li>
+                    <li><a href="myorder.php" class="<?= in_array($currentPage, ['myorder.php', 'orderdetail.php'], true) ? 'active' : '' ?>">My Orders</a></li>
+                    <li><a href="addresses.php" class="<?= $currentPage === 'addresses.php' ? 'active' : '' ?>">Addresses</a></li>
                 <?php endif; ?>
                 <?php
                 /*

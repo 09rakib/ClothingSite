@@ -981,15 +981,68 @@ any single line fails — partial success is impossible. One checkout shares one
 
 ## Phase 3 --- Checkout & Orders
 
--   [ ] Address management.
--   [ ] Checkout page.
--   [ ] Order creation transaction.
--   [ ] Order item snapshots.
--   [ ] Order number.
--   [ ] Order status machine.
--   [ ] Order status history.
--   [ ] Customer order tracking.
--   [ ] Admin order management.
+**STATUS: COMPLETE (2026-08-14)**
+
+-   [x] Address management. --- Full address book (`addresses` table,
+    `addresses.php`), not a single field on the user record (§13). First
+    address saved becomes the default automatically; deleting the default
+    promotes another.
+-   [x] Checkout page. --- Extended in this phase to select from the address
+    book instead of a fixed registration address.
+-   [x] Order creation transaction. --- Already transactional since Phase 2;
+    now writes into `orders` + `order_items` instead of `single_order`.
+-   [x] Order item snapshots. --- `order_items.product_name`/`unit_price`
+    preserved.
+-   [x] Order number. --- `orders.order_reference`, already introduced in
+    Phase 2, now the primary key customers and admins both use to find an order.
+-   [x] Order status machine. --- `App\Orders\OrderStatus` defines the legal
+    transition graph explicitly (§7's example table) and rejects everything
+    else, enforced in `OrderRepository::transitionStatus()` regardless of what
+    the UI offers.
+-   [x] Order status history. --- `order_status_history`; every transition
+    records from/to status, the changed_by admin (NULL for the system), an
+    optional note, and a timestamp.
+-   [x] Customer order tracking. --- `orderdetail.php` renders the actual
+    history log as a timeline rather than a fixed progress bar, so a
+    cancelled or returned order is never shown implying a future step that
+    will not happen (Rule 12).
+-   [x] Admin order management. --- `admin/orders.php` (filter by status,
+    search, paginate) and `admin/vieworder.php` (detail + status transition,
+    dropdown limited to the legal next states).
+
+### The restructure this phase required
+
+`single_order` (Phase 0/2) held one row per product per checkout with no
+natural home for an order-level status. This phase introduced `orders` (one
+row per checkout, carrying status/address snapshot) and `order_items` (one row
+per product), matching §5's recommended split. `single_order` and `payments`
+are preserved **untouched** as an immutable historical record (Rule 10); a PHP
+migration copied their data forward into the new tables without deleting or
+rewriting the originals. The former `placeSingleProductOrder()` method and
+`singleorder.php` page were removed — "Buy Now" now adds one item to the cart
+and goes straight to checkout, so there is exactly one order-creation path
+instead of two that could drift apart (§3.1).
+
+### Bug found and fixed during this phase
+
+`ProductRepository::hasOrders()` still queried the legacy `single_order`
+table after the restructure, so it would have wrongly reported "no order
+history" for a product only ever ordered through the new checkout. Fixed to
+query `order_items`. Caught by grepping for lingering references to the
+legacy table before declaring the phase done — a reminder that Rule 11
+("test before declaring complete") includes checking your own comments
+against what the code actually does after a rename/restructure.
+
+### Deferred to later phases
+
+-   `payments` stays a legacy-only table; new orders carry `payment_method`
+    and a minimal `payment_status` directly, with the full payment
+    abstraction (`payment_transactions`, gateway verification) remaining
+    Phase 4 as planned.
+-   No shipment/carrier tracking (`shipments` table) — "Shipped" is a status,
+    not a tracked package.
+-   Editing an existing order (address/items) after placement is not
+    supported; a customer can only see and the admin can only progress it.
 
 ## Phase 4 --- Payments
 
