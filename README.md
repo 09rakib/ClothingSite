@@ -5,11 +5,12 @@ Customers browse and buy products; admins manage the catalog from a separate
 seller panel.
 
 The codebase follows the engineering rules in [PROJECT_RULES.md](PROJECT_RULES.md),
-which is the project's architecture and security constitution. **Phases 0–3 are
+which is the project's architecture and security constitution. **Phases 0–4 are
 complete**: [Architecture & Safety Foundation](#phase-0--architecture--safety-foundation-complete),
 [Catalog Foundation](#phase-1--catalog-foundation-complete),
-[Cart & Checkout](#phase-2--cart--checkout-complete) and
-[Orders & Address Book](#phase-3--orders--address-book-complete).
+[Cart & Checkout](#phase-2--cart--checkout-complete),
+[Orders & Address Book](#phase-3--orders--address-book-complete) and
+[Payment Abstraction](#phase-4--payment-abstraction-complete).
 
 ## Tech Stack
 
@@ -103,8 +104,11 @@ ClothingSite/
 │   │                              ProductImageRepository
 │   ├── Cart/                      CartService, CartRepository
 │   ├── Account/                   AddressRepository
-│   └── Orders/                    OrderService, OrderRepository, OrderStatus,
-│                                  PaymentMethod
+│   ├── Orders/                    OrderService, OrderRepository, OrderStatus,
+│   │                              PaymentMethod
+│   └── Payments/                  PaymentGateway, PaymentGatewayFactory,
+│                                  CashOnDeliveryGateway, UnconfiguredGateway,
+│                                  PaymentTransactionRepository
 ├── database/
 │   ├── migrate.php                Migration runner (+ backup)
 │   ├── migrations/                Versioned schema changes
@@ -231,16 +235,34 @@ A real bug was caught before merging: `ProductRepository::hasOrders()` still
 queried the retired `single_order` table after the restructure and was fixed
 to query `order_items`.
 
+## Phase 4 — Payment Abstraction (complete)
+
+| Feature | Detail |
+|---|---|
+| `PaymentGateway` interface | `createPayment` / `verifyPayment` / `cancelPayment` / `refundPayment`. `OrderService` only ever calls this interface — it has no idea which concrete provider is behind it. |
+| Cash on Delivery | The one real, working implementation. Records a pending charge at checkout; settles to paid the moment an order is marked Delivered — for COD, that delivery *is* the payment event. |
+| bKash / Card | **Intentionally not connected.** No merchant credentials exist for this project, and simulating a successful payment with nothing real behind it would be exactly the "fake success" Rule 12 forbids. Both are registered behind the same interface via `UnconfiguredGateway`, which fails loudly with a clear message if ever invoked, and are switched off in config. Adding a real integration later is one new class plus one config flag — no change anywhere else. |
+| `payment_transactions` ledger | One row per charge attempt: gateway, status (pending/authorized/paid/failed/cancelled/refunded/partially_refunded), amount, an idempotency key, and a gateway reference once one exists. `orders.payment_status` stays as a fast-read cache of the same story, the same pattern `products.image` already uses for the image gallery. |
+| Idempotency | The ledger's idempotency key carries a UNIQUE index and reuses the order reference, so a retried checkout can never create two charge records for the same order — defense in depth alongside the checkout page's one-time submit token. |
+| Refunds | Returned → Refunded calls `refundPayment()` and records the outcome. For COD this is necessarily a ledger-only entry (no online charge exists to reverse), with an explicit note that the cash refund itself is a manual process for staff. |
+
+Verified end-to-end: checkout creates exactly one pending ledger row; a
+rolled-back checkout leaves no ledger row at all; progressing an order to
+Delivered flips its transaction to paid automatically; Returned → Refunded
+flips it to refunded; and a terminal-status order accepts no further changes
+from either the payment ledger or the order status machine.
+
 ## Roadmap
 
-Phases 0–3 are done. Next, in the order PROJECT_RULES.md §37 recommends:
-**inventory movement tracking** → payment abstraction (bKash/card) → customer
-profile editing/password reset → email notifications → reviews → wishlist →
-blog CMS → roles & permissions → analytics → audit logs → production hardening.
+Phases 0–4 are done for the scope this project has real credentials for.
+Next, in the order PROJECT_RULES.md §37 recommends: inventory movement
+tracking → customer profile editing/password reset → email notifications →
+reviews → wishlist → blog CMS → roles & permissions → analytics → audit logs
+→ production hardening.
 
 Known gaps deliberately **not** addressed yet: real email delivery, password
-reset, profile editing beyond addresses, reviews, wishlist, and a proper
-payment gateway (COD only for now, by design — see `PaymentMethod`).
+reset, profile editing beyond addresses, reviews, wishlist, and real bKash/card
+payment (COD only, by design — see Phase 4 above).
 
 ## Author
 

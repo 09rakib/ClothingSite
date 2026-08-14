@@ -1046,14 +1046,56 @@ against what the code actually does after a rename/restructure.
 
 ## Phase 4 --- Payments
 
--   [ ] Payment abstraction.
--   [ ] COD.
--   [ ] bKash integration if required.
--   [ ] Card gateway integration if required.
--   [ ] Payment transaction records.
--   [ ] Webhook verification.
--   [ ] Idempotency.
--   [ ] Refund architecture.
+**STATUS: COMPLETE for the payment methods this project actually has
+credentials for (2026-08-14)**
+
+-   [x] Payment abstraction. --- `App\Payments\PaymentGateway` interface
+    (`createPayment`/`verifyPayment`/`cancelPayment`/`refundPayment`).
+    `OrderService` calls only this interface; it does not know or care which
+    concrete gateway is behind it.
+-   [x] COD. --- `CashOnDeliveryGateway`, fully working: records a pending
+    transaction at checkout, settles to paid when the order is marked
+    Delivered (§7's status machine and §9's payment ledger meet exactly
+    there).
+-   [~] bKash integration. --- **Not built.** `UnconfiguredGateway` is
+    registered behind the interface and fails loudly with a clear
+    configuration error if ever invoked, rather than simulating a payment
+    that was never actually charged anywhere (Rule 12 "No fake success"). No
+    bKash merchant account/credentials exist for this project. Swapping in a
+    real implementation later means writing one class and flipping
+    `config/config.php`'s `payments.methods.bkash.enabled` to true — nothing
+    in the order system changes.
+-   [~] Card gateway integration. --- Same situation and same reasoning as
+    bKash, via the same `UnconfiguredGateway`.
+-   [x] Payment transaction records. --- `payment_transactions` table: one
+    row per charge attempt, with gateway, status, amount, an idempotency key,
+    and an optional gateway transaction reference.
+-   [~] Webhook verification. --- **N/A while no redirect-based gateway is
+    connected** — there is nothing to verify a webhook against yet. The
+    `verifyPayment()` method exists on the interface for when one is added;
+    building a webhook receiver now would be dead code satisfying a checklist
+    item rather than doing anything (the same reasoning as not building fake
+    bKash success).
+-   [x] Idempotency. --- `payment_transactions.idempotency_key` carries a
+    UNIQUE index; `order_reference` is reused as that key, so even a retried
+    checkout transaction cannot create two charge records for one order. This
+    sits alongside, not instead of, the checkout page's one-time submit token.
+-   [x] Refund architecture. --- Moving an order to Returned then Refunded
+    calls `PaymentGateway::refundPayment()` and records the result. For COD
+    this is necessarily a ledger entry only (there is no online charge to
+    reverse) with an explicit message that the cash refund is a manual,
+    out-of-band process — again Rule 12: the ledger says what actually
+    happened, not a fabricated "refund processed."
+
+### Why bKash/Card were not really integrated
+
+Both were switched off in `config/config.php` from Phase 0 onward specifically
+because there were no real merchant credentials to integrate against. §9's own
+instructions are conditional here — "bKash integration **if required**" — and
+building a simulated successful payment for either would violate Rule 12 more
+directly than leaving them unbuilt. The abstraction is complete and real
+integration is a contained, additive change (one new class, one config flag)
+whenever credentials exist.
 
 ## Phase 5 --- Customer Experience
 

@@ -5,10 +5,15 @@ declare(strict_types=1);
 namespace App\Orders;
 
 use App\Account\AddressRepository;
+use App\Payments\PaymentGatewayFactory;
+use App\Payments\PaymentRequest;
+use App\Payments\PaymentStatus;
+use App\Payments\PaymentTransactionRepository;
 use App\Support\Database;
 use App\Support\Logger;
 use mysqli;
 use RuntimeException;
+use Throwable;
 
 /**
  * Order placement business logic (PROJECT_RULES.md §7, §8, Rule 6, Rule 9).
@@ -37,12 +42,14 @@ final class OrderService
     private mysqli $db;
     private OrderRepository $orders;
     private AddressRepository $addresses;
+    private PaymentTransactionRepository $transactions;
 
     public function __construct(?mysqli $db = null)
     {
-        $this->db        = $db ?? Database::connection();
-        $this->orders    = new OrderRepository($this->db);
-        $this->addresses = new AddressRepository($this->db);
+        $this->db           = $db ?? Database::connection();
+        $this->orders       = new OrderRepository($this->db);
+        $this->addresses    = new AddressRepository($this->db);
+        $this->transactions = new PaymentTransactionRepository($this->db);
     }
 
     /**
@@ -167,6 +174,29 @@ final class OrderService
                 $customerNote
             );
 
+            // Payment abstraction (§9): OrderService asks a PaymentGateway to
+            // start the payment and records the result in the ledger — it has
+            // no idea whether that gateway is COD or a future real provider.
+            // The order_reference is reused as the idempotency key, so a
+            // retried checkout transaction could never create two charge
+            // records for the same order even if it somehow ran twice.
+            $gateway = PaymentGatewayFactory::for($paymentMethod);
+            $payment = $gateway->createPayment(new PaymentRequest(
+                orderId: $orderId,
+                orderReference: $reference,
+                amount: $totalStr,
+                idempotencyKey: $reference
+            ));
+
+            $this->transactions->record(
+                $orderId,
+                $paymentMethod,
+                $payment->status,
+                $totalStr,
+                $reference,
+                $payment->transactionReference
+            );
+
             $stockStmt = $db->prepare('UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?');
 
             foreach ($lineData as $line) {
@@ -237,7 +267,7 @@ final class OrderService
      * Auth::requireOwnership(), exactly like every other customer-scoped
      * resource (§19 "No IDOR"). Admin pages intentionally skip that check.
      *
-     * @return array{order:array<string,mixed>,items:array<int,array<string,mixed>>,history:array<int,array<string,mixed>>}|null
+     * @return array{order:array<string,mixed>,items:array<int,array<string,mixed>>,history:array<int,array<string,mixed>>,payments:array<int,array<string,mixed>>}|null
      */
     public function detail(int $orderId): ?array
     {
@@ -247,9 +277,10 @@ final class OrderService
         }
 
         return [
-            'order'   => $order,
-            'items'   => $this->orders->itemsFor($orderId),
-            'history' => $this->orders->statusHistory($orderId),
+            'order'    => $order,
+            'items'    => $this->orders->itemsFor($orderId),
+            'history'  => $this->orders->statusHistory($orderId),
+            'payments' => $this->transactions->forOrder($orderId),
         ];
     }
 
@@ -263,17 +294,78 @@ final class OrderService
     /**
      * Admin: move an order to a new status.
      *
+     * When the new status is Delivered or Refunded, the payment ledger is
+     * updated to match: OrderRepository::transitionStatus already caches
+     * "paid" onto orders.payment_status for Delivered, and this method
+     * additionally asks the payment gateway to settle/refund the underlying
+     * transaction, keeping the ledger (the source of truth) in sync with that
+     * cache rather than the other way around.
+     *
      * @throws RuntimeException when the transition is not allowed.
      */
     public function updateStatus(int $orderId, string $newStatus, int $adminUserId, ?string $note = null): void
     {
         $this->orders->transitionStatus($orderId, $newStatus, $adminUserId, $note);
 
+        if ($newStatus === OrderStatus::DELIVERED || $newStatus === OrderStatus::REFUNDED) {
+            $this->settlePaymentForStatus($orderId, $newStatus);
+        }
+
         Logger::info('Order status changed', [
             'order_id' => $orderId,
             'to'       => $newStatus,
             'admin_id' => $adminUserId,
         ]);
+    }
+
+    /**
+     * Reflect a status change in the payment ledger.
+     *
+     * Delivered: for cash on delivery — the only connected gateway — the
+     * courier handing over the parcel *is* the payment event, so the ledger
+     * is marked paid directly rather than through a gateway "verify" call
+     * that would be meaningless for an offline method. A future online
+     * gateway would already show PAID from checkout itself (§9: never assume
+     * success — real gateways confirm via their own webhook/verify step at
+     * charge time, not at delivery time), so this branch only ever applies to
+     * COD in practice.
+     *
+     * Refunded: this genuinely is a per-gateway action (§9), so it goes
+     * through PaymentGateway::refundPayment().
+     *
+     * A gateway failure here is logged but never re-thrown — the shipping
+     * status change the admin just made must not be rolled back because a
+     * ledger call afterwards failed. The resulting mismatch is a
+     * reconciliation concern for Phase 8 hardening, not a checkout-time one.
+     */
+    private function settlePaymentForStatus(int $orderId, string $newStatus): void
+    {
+        $order  = $this->orders->find($orderId);
+        $latest = $this->transactions->latestForOrder($orderId);
+
+        if ($order === null || $latest === null) {
+            return;
+        }
+
+        try {
+            if ($newStatus === OrderStatus::DELIVERED) {
+                $this->transactions->updateStatus((int) $latest['id'], PaymentStatus::PAID);
+
+                return;
+            }
+
+            $gateway   = PaymentGatewayFactory::for((string) $order['payment_method']);
+            $reference = (string) ($latest['transaction_reference'] ?? $latest['idempotency_key']);
+            $result    = $gateway->refundPayment($reference);
+
+            $this->transactions->updateStatus((int) $latest['id'], $result->status, $result->transactionReference);
+        } catch (Throwable $e) {
+            Logger::error('Payment settlement failed after status change', [
+                'order_id' => $orderId,
+                'to'       => $newStatus,
+                'error'    => $e->getMessage(),
+            ]);
+        }
     }
 
     public function repository(): OrderRepository
