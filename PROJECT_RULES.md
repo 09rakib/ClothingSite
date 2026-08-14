@@ -1205,14 +1205,53 @@ verified in `InventoryTest`.
 
 ## Phase 7 --- Analytics & Growth
 
--   [ ] Revenue analytics.
--   [ ] Date-range filters.
--   [ ] Sales charts.
--   [ ] Best sellers.
--   [ ] Customer metrics.
--   [ ] Coupons.
--   [ ] Promotions.
--   [ ] Abandoned-cart strategy if needed.
+**STATUS: COMPLETE except Promotions and abandoned-cart automation,
+deliberately deferred (2026-08-14)**
+
+-   [x] Revenue analytics. --- `AnalyticsRepository::summary()`: orders,
+    revenue, average order value, discounts given — excluding
+    cancelled/failed orders, the same rule the admin dashboard already uses.
+-   [x] Date-range filters. --- `admin/analytics.php` accepts `?from=&to=`,
+    validated against a strict date format and capped at 366 days so a
+    crafted query string cannot force an unbounded scan.
+-   [x] Sales charts. --- Hand-rolled inline SVG bar chart (daily revenue).
+    No charting library added — one chart on one page does not justify a
+    dependency, consistent with this codebase's vanilla-JS approach
+    throughout.
+-   [x] Best sellers. --- Ranked by units sold within the selected range.
+-   [x] Customer metrics. --- New customers, repeat-purchase rate, top
+    customers by all-time spend.
+-   [x] Coupons. --- Real, working: `coupons` + `coupon_usages` tables,
+    `CouponRepository`, applied at checkout (percent or fixed, minimum
+    order, usage limit, expiry). The usage limit is re-checked under a row
+    lock at redemption time — the same "read-then-write under FOR UPDATE"
+    pattern stock deduction uses — so two concurrent checkouts cannot both
+    claim the last use of a limited coupon.
+-   [~] Promotions. --- **Deliberately not built** as a separate campaign
+    engine. §29 lists it as conditional ("if a more advanced campaign
+    system is required"), and nothing in this project has that requirement.
+    Coupons cover the concrete need. Building automatic sales/BOGO logic
+    with no real use case would be exactly the complexity the "do not
+    design for hypothetical future requirements" principle warns against.
+-   [~] Abandoned-cart strategy. --- **Deliberately not built.** §30 itself
+    marks this "if needed." Implementing it honestly requires a scheduled
+    job (find carts idle N hours, email the owner) and this environment has
+    no cron/task runner wired up to invoke one — building the detection
+    logic without a way to actually run it on a schedule would be dead
+    code, not a feature.
+
+### A real bug this phase's tests caught before merge
+
+Adding `coupon_code`/`discount_amount` to `orders` required extending
+`OrderRepository::createOrder()`'s `bind_param()` call from 12 to 14
+placeholders. The type string was updated to 13 characters instead of 14 —
+one short — which would have made every checkout throw immediately. The full
+test suite (which exercises `placeOrderFromCart()` from a dozen different
+angles) failed 58 tests instantly on the miscount, well before any manual
+browser testing would have reached it. Fixed by recounting the type string
+against the parameter list rather than eyeballing it, and re-running the full
+suite to confirm — the exact value of running the complete suite after a
+schema/signature change, not just the tests for the feature being added.
 
 ## Phase 8 --- Production Hardening
 

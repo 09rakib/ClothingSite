@@ -102,6 +102,18 @@ require_once __DIR__ . '/includes/header.php';
                     </tbody>
                     <tfoot>
                         <tr>
+                            <th colspan="3" scope="row">Subtotal</th>
+                            <th><?= View::money($order['subtotal']) ?></th>
+                        </tr>
+                        <?php if ((float) ($order['discount_amount'] ?? 0) > 0): ?>
+                            <tr>
+                                <th colspan="3" scope="row">
+                                    Discount<?= !empty($order['coupon_code']) ? ' (' . View::e($order['coupon_code']) . ')' : '' ?>
+                                </th>
+                                <th class="movement-positive">&minus;<?= View::money($order['discount_amount']) ?></th>
+                            </tr>
+                        <?php endif; ?>
+                        <tr>
                             <th colspan="3" scope="row">Total</th>
                             <th><?= View::money($order['total']) ?></th>
                         </tr>

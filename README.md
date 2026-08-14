@@ -5,14 +5,15 @@ Customers browse and buy products; admins manage the catalog from a separate
 seller panel.
 
 The codebase follows the engineering rules in [PROJECT_RULES.md](PROJECT_RULES.md),
-which is the project's architecture and security constitution. **Phases 0–6 are
+which is the project's architecture and security constitution. **Phases 0–7 are
 complete**: [Architecture & Safety Foundation](#phase-0--architecture--safety-foundation-complete),
 [Catalog Foundation](#phase-1--catalog-foundation-complete),
 [Cart & Checkout](#phase-2--cart--checkout-complete),
 [Orders & Address Book](#phase-3--orders--address-book-complete),
 [Payment Abstraction](#phase-4--payment-abstraction-complete),
-[Customer Experience](#phase-5--customer-experience-complete) and
-[Admin & Operations](#phase-6--admin--operations-complete).
+[Customer Experience](#phase-5--customer-experience-complete),
+[Admin & Operations](#phase-6--admin--operations-complete) and
+[Analytics & Growth](#phase-7--analytics--growth-complete).
 
 ## Tech Stack
 
@@ -83,8 +84,13 @@ git-ignored (§19 "Secrets").
 - Order history, one row per checkout regardless of item count
 - Receive email notifications: welcome, order confirmation, order status
   changes, password reset
+- **Apply a coupon code at checkout** (percent or fixed discount)
 
 **Admin (Seller Panel)**
+- **Analytics**: revenue chart, date-range filter, best sellers, customer
+  metrics, top customers
+- **Manage coupons**: percent/fixed discounts, minimum order, usage limit,
+  expiry
 - Dashboard: order status breakdown, revenue, low/out of stock, customers
 - **Manage orders**: filter by status, search, view detail, transition status
   with a note (only the legal next statuses are ever offered) — the customer
@@ -135,7 +141,9 @@ ClothingSite/
 │   ├── Inventory/                 InventoryRepository (stock movement ledger)
 │   ├── Users/                     UserRepository (admin user management)
 │   ├── Blog/                      BlogRepository
-│   └── Audit/                     AuditLogger
+│   ├── Audit/                     AuditLogger
+│   ├── Coupons/                   CouponRepository
+│   └── Analytics/                 AnalyticsRepository
 ├── database/
 │   ├── migrate.php                Migration runner (+ backup)
 │   ├── migrations/                Versioned schema changes
@@ -320,17 +328,43 @@ filter works; a draft blog post is invisible on the listing and 404s directly,
 publishing makes it live immediately; and every action above appears correctly
 in the audit log, filterable by entity type.
 
+## Phase 7 — Analytics & Growth (complete)
+
+| Feature | Detail |
+|---|---|
+| Revenue analytics | Orders, revenue, average order value, discounts given — excludes cancelled/failed orders, date-range filtered. |
+| Sales chart | Hand-rolled inline SVG bar chart. No charting library added for one chart on one page. |
+| Best sellers | Ranked by units sold in the selected range. |
+| Customer metrics | New customers, repeat-purchase rate, top customers by all-time spend. |
+| Coupons | Percent or fixed discount, minimum order amount, usage limit, expiry. Applied and validated **again, for real** inside the checkout transaction — never trusts what the review page showed. The usage limit is re-checked under a row lock at redemption, so two concurrent checkouts cannot both claim the last use. |
+| Promotions | **Deliberately not built** as a separate campaign engine — §29 marks it conditional, and coupons cover the actual need. |
+| Abandoned-cart emails | **Deliberately not built** — §30 marks it "if needed," and this environment has no scheduled-job runner to actually send them on a timer. |
+
+A real bug surfaced and was fixed during this phase: extending the orders
+insert from 12 to 14 bound parameters left the `mysqli` type string one
+character short, which would have broken every checkout. The full test suite
+caught it immediately (58 failing tests) before any manual verification — see
+PROJECT_RULES.md for the detail.
+
+Verified end-to-end: a coupon applied at checkout shows the correct discount
+in the summary, and placing the order records the exact subtotal/discount/total
+on the order row and increments the coupon's redemption count; the analytics
+page renders a real chart from live order data.
+
 ## Roadmap
 
-Phases 0–6 are done for the scope this project has real credentials and
-genuine need for. Remaining PROJECT_RULES.md §37 items — analytics/reporting,
-coupons/promotions, deeper production hardening (monitoring, staging,
-deployment automation) — are Phase 7/8 territory for when the store has real
-traffic to analyze and a production environment to harden.
+Phases 0–7 are done for the scope this project has real credentials, genuine
+need, and the infrastructure to support. Phase 8 (production hardening —
+monitoring, staging, deployment automation, load testing) is the only
+remaining phase, and several of its items require infrastructure (a real
+staging server, an external error-tracking service) this local XAMPP project
+does not have — see PROJECT_RULES.md for what is and isn't realistically
+achievable here.
 
 Known gaps deliberately **not** addressed: email verification (Phase 5), real
-bKash/card payment (Phase 4, COD only by design), and staff roles beyond
-admin/customer (Phase 6, per §17's own guidance against premature complexity).
+bKash/card payment (Phase 4, COD only by design), staff roles beyond
+admin/customer (Phase 6), and a promotions engine / abandoned-cart automation
+(Phase 7) — each documented with its specific reasoning in PROJECT_RULES.md.
 
 ## Author
 

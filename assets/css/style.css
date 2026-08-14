@@ -1490,3 +1490,20 @@ textarea:focus-visible {
 }
 
 .container-narrow.container { max-width: 760px; margin: 0 auto; }
+
+/* =========================================================
+   Phase 7 additions — coupons, analytics
+   ========================================================= */
+
+.coupon-form { display: flex; gap: 8px; }
+.coupon-form input { flex: 1; }
+
+.chart-scroll { overflow-x: auto; }
+.revenue-chart {
+    width: 100%;
+    min-width: 600px;
+    height: 200px;
+    display: block;
+}
+.revenue-chart rect { transition: opacity 0.15s ease; }
+.revenue-chart rect:hover { opacity: 0.75; }

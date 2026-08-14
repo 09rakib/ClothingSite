@@ -6,6 +6,7 @@ namespace App\Orders;
 
 use App\Account\AddressRepository;
 use App\Audit\AuditLogger;
+use App\Coupons\CouponRepository;
 use App\Inventory\InventoryRepository;
 use App\Payments\PaymentGatewayFactory;
 use App\Payments\PaymentRequest;
@@ -47,6 +48,7 @@ final class OrderService
     private PaymentTransactionRepository $transactions;
     private InventoryRepository $inventory;
     private AuditLogger $audit;
+    private CouponRepository $coupons;
 
     public function __construct(?mysqli $db = null)
     {
@@ -56,13 +58,20 @@ final class OrderService
         $this->transactions = new PaymentTransactionRepository($this->db);
         $this->inventory    = new InventoryRepository($this->db);
         $this->audit        = new AuditLogger($this->db);
+        $this->coupons      = new CouponRepository($this->db);
     }
 
     /**
      * Place an order for every line in a cart, atomically.
      *
+     * A coupon, if given, is validated and its discount computed from the
+     * database subtotal — never from anything the browser sent — and its
+     * usage is recorded and its limit re-checked under a row lock in the
+     * same transaction as the order itself, so a coupon cannot be
+     * over-redeemed by two concurrent checkouts (§8, Rule 6).
+     *
      * @param array<int,array{product_id:int,quantity:int}> $lines
-     * @return array{reference:string,order_id:int,total:string,lines:array<int,array<string,mixed>>,payment_method:string}
+     * @return array{reference:string,order_id:int,subtotal:string,discount_amount:string,coupon_code:?string,total:string,lines:array<int,array<string,mixed>>,payment_method:string}
      * @throws RuntimeException with a message safe to show the customer.
      */
     public function placeOrderFromCart(
@@ -70,7 +79,8 @@ final class OrderService
         array $lines,
         int $addressId,
         ?string $paymentMethod = null,
-        ?string $customerNote = null
+        ?string $customerNote = null,
+        ?string $couponCode = null
     ): array {
         if ($lines === []) {
             throw new RuntimeException('Your cart is empty.');
@@ -115,7 +125,7 @@ final class OrderService
         }
         ksort($wanted);
 
-        return Database::transaction(function (mysqli $db) use ($userId, $wanted, $paymentMethod, $address, $customerNote): array {
+        return Database::transaction(function (mysqli $db) use ($userId, $wanted, $paymentMethod, $address, $customerNote, $couponCode): array {
             $reference = self::generateReference();
             $total     = 0.0;
             $placed    = [];
@@ -162,12 +172,27 @@ final class OrderService
             }
             $lockStmt->close();
 
-            $totalStr = number_format($total, 2, '.', '');
+            $subtotalStr = number_format($total, 2, '.', '');
+
+            // Coupon validated and applied here, inside the same transaction
+            // as the stock locks — a coupon whose usage limit fills up
+            // between checkout page load and submit is caught here, not
+            // silently honoured (§8, Rule 6: never trust a discount computed
+            // earlier in the request).
+            $coupon         = null;
+            $discountAmount = '0.00';
+
+            if ($couponCode !== null && trim($couponCode) !== '') {
+                $coupon         = $this->coupons->validate($couponCode, $subtotalStr);
+                $discountAmount = $this->coupons->calculateDiscount($coupon, $subtotalStr);
+            }
+
+            $totalStr = number_format((float) $subtotalStr - (float) $discountAmount, 2, '.', '');
 
             $orderId = $this->orders->createOrder(
                 $reference,
                 $userId,
-                $totalStr,
+                $subtotalStr,
                 $totalStr,
                 $paymentMethod,
                 [
@@ -177,8 +202,14 @@ final class OrderService
                     'address_line2'  => $address['address_line2'] !== null ? (string) $address['address_line2'] : null,
                     'city'           => (string) $address['city'],
                 ],
-                $customerNote
+                $customerNote,
+                $coupon !== null ? (string) $coupon['code'] : null,
+                $discountAmount
             );
+
+            if ($coupon !== null) {
+                $this->coupons->redeem($db, (int) $coupon['id'], $orderId, $userId, $discountAmount);
+            }
 
             // Payment abstraction (§9): OrderService asks a PaymentGateway to
             // start the payment and records the result in the ledger — it has
@@ -245,11 +276,14 @@ final class OrderService
             ]);
 
             return [
-                'reference'      => $reference,
-                'order_id'       => $orderId,
-                'total'          => $totalStr,
-                'lines'          => $placed,
-                'payment_method' => $paymentMethod,
+                'reference'        => $reference,
+                'order_id'         => $orderId,
+                'subtotal'         => $subtotalStr,
+                'discount_amount'  => $discountAmount,
+                'coupon_code'      => $coupon !== null ? (string) $coupon['code'] : null,
+                'total'            => $totalStr,
+                'lines'            => $placed,
+                'payment_method'   => $paymentMethod,
             ];
         });
     }
