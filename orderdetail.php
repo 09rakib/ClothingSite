@@ -140,6 +140,7 @@ require_once __DIR__ . '/includes/header.php';
 
             <h2 class="card-title mt-16">Payment</h2>
             <p><?= View::e(PaymentMethod::label($order['payment_method'])) ?></p>
+            <p class="muted"><?= $order['payment_status'] === 'paid' ? 'Paid' : 'Payment due on delivery' ?></p>
 
             <?php if (!empty($order['customer_note'])): ?>
                 <h2 class="card-title mt-16">Your Note</h2>

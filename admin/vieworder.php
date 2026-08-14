@@ -20,6 +20,7 @@ require_once __DIR__ . '/../includes/admin-header.php';
 use App\Orders\OrderService;
 use App\Orders\OrderStatus;
 use App\Orders\PaymentMethod;
+use App\Payments\PaymentStatus;
 use App\Support\Auth;
 use App\Support\Csrf;
 use App\Support\Flash;
@@ -78,6 +79,7 @@ if ($detail === null) {
 $order       = $detail['order'];
 $items       = $detail['items'];
 $history     = $detail['history'];
+$payments    = $detail['payments'];
 $nextOptions = OrderStatus::allowedNext((string) $order['status']);
 ?>
 
@@ -154,7 +156,27 @@ $nextOptions = OrderStatus::allowedNext((string) $order['status']);
 
             <h2 class="card-title mt-16">Payment</h2>
             <p><?= View::e(PaymentMethod::label($order['payment_method'])) ?></p>
-            <p class="muted"><?= $order['payment_status'] === 'paid' ? 'Paid' : 'Unpaid' ?></p>
+
+            <?php if ($payments === []): ?>
+                <p class="muted"><?= $order['payment_status'] === 'paid' ? 'Paid' : 'Unpaid' ?></p>
+            <?php else: ?>
+                <ul class="plain-list">
+                    <?php foreach ($payments as $txn): ?>
+                        <li>
+                            <span class="status-pill <?= $txn['status'] === 'paid' ? 'status-active' : ($txn['status'] === 'failed' ? 'status-archived' : 'status-pending') ?>">
+                                <?= View::e(PaymentStatus::label($txn['status'])) ?>
+                            </span>
+                            <?= View::money($txn['amount']) ?>
+                            <small class="muted">
+                                &middot; <?= View::e(date('d M Y, g:i a', strtotime((string) $txn['created_at']))) ?>
+                                <?php if (!empty($txn['transaction_reference'])): ?>
+                                    &middot; ref <?= View::e($txn['transaction_reference']) ?>
+                                <?php endif; ?>
+                            </small>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            <?php endif; ?>
 
             <?php if (!empty($order['customer_note'])): ?>
                 <h2 class="card-title mt-16">Customer Note</h2>
