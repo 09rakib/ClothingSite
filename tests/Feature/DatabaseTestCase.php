@@ -38,6 +38,10 @@ abstract class DatabaseTestCase extends TestCase
         // ON DELETE CASCADE, so without this its rows survive and leak into
         // the next test.
         foreach ([
+            'order_status_history',
+            'order_items',
+            'orders',
+            'addresses',
             'payments',
             'single_order',
             'contact_messages',
@@ -95,6 +99,25 @@ abstract class DatabaseTestCase extends TestCase
         $description = 'A test product';
         $image       = 'test.jpg';
         $stmt->bind_param('ssdis', $name, $description, $price, $stock, $image);
+        $stmt->execute();
+        $id = (int) $this->db->insert_id;
+        $stmt->close();
+
+        return $id;
+    }
+
+    /**
+     * Create a delivery address for a user and return its id, for tests that
+     * exercise checkout (which now requires a real, owned address_id).
+     */
+    protected function createAddress(int $userId, bool $default = true): int
+    {
+        $stmt = $this->db->prepare(
+            'INSERT INTO addresses (user_id, label, recipient_name, phone, address_line1, city, is_default)
+             VALUES (?, "Home", "Test Recipient", "01700000000", "123 Test Road", "Dhaka", ?)'
+        );
+        $isDefault = $default ? 1 : 0;
+        $stmt->bind_param('ii', $userId, $isDefault);
         $stmt->execute();
         $id = (int) $this->db->insert_id;
         $stmt->close();

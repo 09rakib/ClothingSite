@@ -1213,3 +1213,126 @@ textarea:focus-visible {
     .cart-item-image img { width: 72px; height: 72px; }
     .cart-item-total { grid-column: 2; text-align: right; }
 }
+
+/* =========================================================
+   Phase 3 additions — orders, addresses, status tracking
+   ========================================================= */
+
+/* Pending/confirmed/processing pill — distinct from the low/active/archived
+   set already defined, so "in progress" reads differently from "done". */
+.status-pending { background: #dbeafe; color: #1e40af; }
+
+.card-subtitle {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-muted);
+    margin-bottom: 6px;
+}
+
+.card-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--color-border);
+}
+.card-title-row .card-title { margin: 0; padding: 0; border: none; }
+
+.order-confirm-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--color-border);
+}
+
+/* ---------- Order status timeline ---------- */
+.order-timeline {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-left: 2px solid var(--color-border);
+}
+
+.order-timeline li {
+    position: relative;
+    padding: 0 0 20px 22px;
+}
+.order-timeline li:last-child { padding-bottom: 0; }
+
+.order-timeline li::before {
+    content: "";
+    position: absolute;
+    left: -7px;
+    top: 3px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    border: 2px solid var(--color-surface);
+}
+
+.order-timeline-date {
+    display: block;
+    font-size: 12.5px;
+    color: var(--color-text-muted);
+    margin-top: 4px;
+}
+
+/* ---------- Address book ---------- */
+.address-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 14px;
+}
+
+.address-card {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 14px;
+    background: var(--color-surface);
+}
+.address-card.is-default { border-color: var(--color-success); }
+
+.address-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.address-card-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+/* ---------- Admin status breakdown ---------- */
+.status-breakdown {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.status-breakdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: var(--color-surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    text-decoration: none;
+    color: inherit;
+}
+.status-breakdown-item:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+
+.status-breakdown-count { font-weight: 700; font-size: 15px; }
+
+@media (max-width: 700px) {
+    .order-confirm-meta { grid-template-columns: 1fr; }
+}

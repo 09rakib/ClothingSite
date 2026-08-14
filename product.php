@@ -15,11 +15,9 @@ require_once __DIR__ . '/src/bootstrap.php';
 
 use App\Catalog\ProductImageRepository;
 use App\Catalog\ProductRepository;
-use App\Orders\PaymentMethod;
 use App\Support\Auth;
 use App\Support\Csrf;
 use App\Support\Http;
-use App\Support\OneTimeToken;
 use App\Support\View;
 
 $products = new ProductRepository();
@@ -139,11 +137,13 @@ require_once __DIR__ . '/includes/header.php';
             <?php if ($stock > 0 && !Auth::isAdmin()): ?>
                 <?php
                 /*
-                 * Add to Cart is available to guests as well as customers —
-                 * the cart is merged into their account when they log in.
-                 * Buy Now stays for customers who want to skip the cart, and
-                 * still requires a logged-in customer because it places an
-                 * order immediately.
+                 * Both buttons are the same "add to cart" action — Add to Cart
+                 * returns to this page, Buy Now returns straight to checkout.
+                 * This means there is exactly one order-creation path (through
+                 * the cart) rather than two that could drift apart, and it is
+                 * why "Buy Now" works for guests too: they land on checkout,
+                 * which asks them to log in, and their cart (with this item
+                 * already in it) is waiting for them afterwards.
                  */
                 ?>
                 <form method="post" action="cartaction.php" class="detail-buy-form">
@@ -160,16 +160,16 @@ require_once __DIR__ . '/includes/header.php';
                     <button type="submit" class="btn btn-block btn-lg">Add to Cart</button>
                 </form>
 
-                <?php if ($canBuy): ?>
-                    <form method="post" action="singleorder.php" class="detail-buy-form">
-                        <?= Csrf::field() ?>
-                        <?= OneTimeToken::field('place_order') ?>
-                        <input type="hidden" name="product_id" value="<?= $productId ?>">
-                        <input type="hidden" name="quantity" value="1">
-                        <input type="hidden" name="payment_method" value="<?= View::e(PaymentMethod::default()) ?>">
-                        <button type="submit" class="btn btn-block btn-outline" style="background:var(--color-primary);">Buy Now (1 item)</button>
-                    </form>
-                <?php else: ?>
+                <form method="post" action="cartaction.php" class="detail-buy-form">
+                    <?= Csrf::field() ?>
+                    <input type="hidden" name="action" value="add">
+                    <input type="hidden" name="product_id" value="<?= $productId ?>">
+                    <input type="hidden" name="quantity" value="1">
+                    <input type="hidden" name="return" value="checkout.php">
+                    <button type="submit" class="btn btn-block btn-outline" style="background:var(--color-primary);">Buy Now (1 item)</button>
+                </form>
+
+                <?php if (!$canBuy): ?>
                     <p class="note text-center">
                         <a href="login.php">Log in</a> to check out — your cart will be waiting.
                     </p>

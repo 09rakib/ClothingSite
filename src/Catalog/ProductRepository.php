@@ -382,10 +382,15 @@ final class ProductRepository
     /**
      * True when a product has order history and therefore must never be
      * hard-deleted.
+     *
+     * PHASE 3: checks order_items, the current order line table, rather than
+     * the legacy single_order table it read before the Phase 3 restructure —
+     * a product ordered only through the new checkout would otherwise have
+     * been reported as having no history.
      */
     public function hasOrders(int $id): bool
     {
-        $stmt = $this->db->prepare('SELECT 1 FROM single_order WHERE product_id = ? LIMIT 1');
+        $stmt = $this->db->prepare('SELECT 1 FROM order_items WHERE product_id = ? LIMIT 1');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $exists = $stmt->get_result()->num_rows > 0;

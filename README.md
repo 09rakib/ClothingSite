@@ -5,10 +5,11 @@ Customers browse and buy products; admins manage the catalog from a separate
 seller panel.
 
 The codebase follows the engineering rules in [PROJECT_RULES.md](PROJECT_RULES.md),
-which is the project's architecture and security constitution. **Phases 0–2 are
+which is the project's architecture and security constitution. **Phases 0–3 are
 complete**: [Architecture & Safety Foundation](#phase-0--architecture--safety-foundation-complete),
-[Catalog Foundation](#phase-1--catalog-foundation-complete) and
-[Cart & Checkout](#phase-2--cart--checkout-complete).
+[Catalog Foundation](#phase-1--catalog-foundation-complete),
+[Cart & Checkout](#phase-2--cart--checkout-complete) and
+[Orders & Address Book](#phase-3--orders--address-book-complete).
 
 ## Tech Stack
 
@@ -65,13 +66,18 @@ git-ignored (§19 "Secrets").
   image gallery, stock state and related products
 - **Add to cart as a guest** — the cart follows you into your account on login
 - Update quantities, remove items, empty the cart
-- Checkout with a payment-method choice, order review and an order reference
+- **Manage a full address book** (multiple addresses, one default)
+- Checkout: choose delivery address, payment method, add a note, review, place
+- Buy Now for a single item, skipping straight to checkout
 - Register / login (bcrypt hashes, rate-limited login)
-- Buy Now for a single item, skipping the cart
-- View personal order history, grouped so one checkout is one order
+- Track order status on a real timeline (Pending → Confirmed → Processing →
+  Shipped → Delivered, or Cancelled/Returned/Refunded)
+- Order history, one row per checkout regardless of item count
 
 **Admin (Seller Panel)**
-- Dashboard: products, low/out of stock, archived, orders, revenue, customers
+- Dashboard: order status breakdown, revenue, low/out of stock, customers
+- **Manage orders**: filter by status, search, view detail, transition status
+  with a note (only the legal next statuses are ever offered)
 - Add / update products with validated image upload, SKU and an optional
   per-product low-stock threshold
 - Manage each product's image gallery (upload, set primary, delete)
@@ -96,7 +102,9 @@ ClothingSite/
 │   ├── Catalog/                   ProductRepository, CategoryRepository,
 │   │                              ProductImageRepository
 │   ├── Cart/                      CartService, CartRepository
-│   └── Orders/                    OrderService, PaymentMethod
+│   ├── Account/                   AddressRepository
+│   └── Orders/                    OrderService, OrderRepository, OrderStatus,
+│                                  PaymentMethod
 ├── database/
 │   ├── migrate.php                Migration runner (+ backup)
 │   ├── migrations/                Versioned schema changes
@@ -201,19 +209,38 @@ token created no duplicate; forcing a POST past the disabled button was refused
 server-side with zero orders written; and editing another customer's cart line
 by changing `item_id` was rejected.
 
+## Phase 3 — Orders & Address Book (complete)
+
+| Feature | Detail |
+|---|---|
+| Orders/order_items restructure | Replaced the line-item-only `single_order` table with `orders` (one row per checkout: status, address snapshot, payment) + `order_items` (one row per product). `single_order`/`payments` are preserved untouched as historical record; a migration copied their data forward without deleting the originals (Rule 10). |
+| Order status machine | `OrderStatus` defines the legal transition graph explicitly (Pending → Confirmed → Processing → Shipped → Delivered, plus Cancelled/Failed/Returned/Refunded as appropriate branches) and rejects everything else — enforced server-side regardless of what the admin dropdown offers. |
+| Order status history | Every transition is recorded: from/to status, which admin changed it, an optional note, a timestamp. Customers and admins both see it as an actual timeline, not a fixed progress bar that would misrepresent a cancelled order. |
+| Address book | Customers manage multiple delivery addresses with one default. Checkout selects from the book instead of a fixed registration address; deleting or editing a saved address never changes what a past order shows, because the order keeps its own text snapshot. |
+| Admin order management | `admin/orders.php` (filter by status, search, paginate) and `admin/vieworder.php` (full detail + status transition). |
+| One order-creation path | `singleorder.php` and the old `placeSingleProductOrder()` were removed. Buy Now now adds one item to the cart and goes straight to checkout — there is exactly one place order creation happens. |
+
+Verified end-to-end: checkout without a saved address blocks with a link to
+add one; placing an order snapshots the chosen address; the admin dashboard
+and order list show live status counts; an admin cannot skip status steps even
+by forging the POST value (rejected server-side, no history row written); a
+status change is instantly visible on the customer's tracking page; and a
+customer cannot open another customer's order by guessing its reference (403).
+
+A real bug was caught before merging: `ProductRepository::hasOrders()` still
+queried the retired `single_order` table after the restructure and was fixed
+to query `order_items`.
+
 ## Roadmap
 
-Phases 0, 1 and 2 are done. Next, in the order PROJECT_RULES.md §37 recommends:
-**order status machine** → admin order management → inventory movements →
-payment abstraction → customer profile/address/password reset → notifications →
-reviews → wishlist → blog CMS → roles & permissions → analytics → audit logs →
-production hardening.
+Phases 0–3 are done. Next, in the order PROJECT_RULES.md §37 recommends:
+**inventory movement tracking** → payment abstraction (bKash/card) → customer
+profile editing/password reset → email notifications → reviews → wishlist →
+blog CMS → roles & permissions → analytics → audit logs → production hardening.
 
-Known gaps deliberately **not** addressed yet: order status tracking
-(Pending/Shipped/Delivered), the admin order-management screen, a customer
-address book, real email delivery, password reset, reviews, wishlist and
-profile editing. `single_order` also still holds one row per product — the
-`orders` + `order_items` restructure is Phase 3.
+Known gaps deliberately **not** addressed yet: real email delivery, password
+reset, profile editing beyond addresses, reviews, wishlist, and a proper
+payment gateway (COD only for now, by design — see `PaymentMethod`).
 
 ## Author
 
