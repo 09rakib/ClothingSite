@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/src/bootstrap.php';
 
+use App\Notifications\NotificationService;
 use App\Support\Auth;
 use App\Support\Csrf;
 use App\Support\Database;
@@ -77,6 +78,11 @@ if (Http::isPost()) {
                 $insert->bind_param('ssssss', $name, $email, $hashed, $phone, $address, $role);
                 $insert->execute();
                 $insert->close();
+
+                // Notification failure must never block registration itself
+                // (§20 "Email sending should not block checkout" — the same
+                // rule applies here).
+                (new NotificationService())->sendWelcome($email, $name);
 
                 // POST/Redirect/GET: a refresh must not resubmit the form.
                 Flash::success('Registration successful! You can now log in.');

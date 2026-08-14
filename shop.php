@@ -21,9 +21,16 @@ use App\Support\Config;
 use App\Support\Csrf;
 use App\Support\Http;
 use App\Support\View;
+use App\Wishlist\WishlistRepository;
 
 $products   = new ProductRepository();
 $categories = new CategoryRepository();
+
+// One query for every wishlisted id, rather than one query per card (§12
+// "efficient queries").
+$wishlistedIds = Auth::check() && Auth::isCustomer()
+    ? (new WishlistRepository())->productIdsForUser((int) Auth::id())
+    : [];
 
 // Read filters from the query string; the repository validates/whitelists them.
 $search     = trim((string) ($_GET['q'] ?? ''));
@@ -111,6 +118,21 @@ $activeFilters = array_filter([
                         <img src="assets/images/products/<?= View::e($row['image']) ?>"
                              alt="<?= View::e($row['name']) ?>" loading="lazy">
                     </a>
+
+                    <?php if (Auth::check() && Auth::isCustomer()): ?>
+                        <?php $wishlisted = in_array((int) $row['id'], $wishlistedIds, true); ?>
+                        <form method="post" action="wishaction.php" class="wishlist-toggle-form">
+                            <?= Csrf::field() ?>
+                            <input type="hidden" name="action" value="<?= $wishlisted ? 'remove' : 'add' ?>">
+                            <input type="hidden" name="product_id" value="<?= (int) $row['id'] ?>">
+                            <input type="hidden" name="return" value="shop.php">
+                            <button type="submit" class="wishlist-toggle <?= $wishlisted ? 'is-active' : '' ?>"
+                                    aria-label="<?= $wishlisted ? 'Remove from wishlist' : 'Add to wishlist' ?>">
+                                <?= $wishlisted ? '♥' : '♡' ?>
+                            </button>
+                        </form>
+                    <?php endif; ?>
+
                     <div class="product-body">
                         <h3><a href="<?= View::e($detailUrl) ?>"><?= View::e($row['name']) ?></a></h3>
                         <p class="product-desc"><?= View::e($row['description']) ?></p>

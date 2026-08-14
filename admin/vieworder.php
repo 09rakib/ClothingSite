@@ -17,12 +17,15 @@ declare(strict_types=1);
 $pageTitle = 'Order Detail';
 require_once __DIR__ . '/../includes/admin-header.php';
 
+use App\Notifications\NotificationService;
 use App\Orders\OrderService;
 use App\Orders\OrderStatus;
 use App\Orders\PaymentMethod;
 use App\Payments\PaymentStatus;
 use App\Support\Auth;
+use App\Support\Config;
 use App\Support\Csrf;
+use App\Support\Database;
 use App\Support\Flash;
 use App\Support\Http;
 use App\Support\Logger;
@@ -55,6 +58,35 @@ if (Http::isPost()) {
                 (int) Auth::id(),
                 $validator->value('note') ?: null
             );
+
+            // Notify the customer. Sent after the transition already
+            // committed and never allowed to undo it if delivery fails
+            // (§20 "Email sending should not block checkout").
+            $notifyOrder = $service->detail($orderId);
+            if ($notifyOrder !== null) {
+                $customerStmt = Database::connection()->prepare('SELECT name, email FROM users WHERE id = ? LIMIT 1');
+                $notifyUserId = (int) $notifyOrder['order']['user_id'];
+                $customerStmt->bind_param('i', $notifyUserId);
+                $customerStmt->execute();
+                $customer = $customerStmt->get_result()->fetch_assoc();
+                $customerStmt->close();
+
+                if ($customer) {
+                    $scheme   = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+                    $host     = (string) ($_SERVER['HTTP_HOST'] ?? 'localhost');
+                    $basePath = rtrim((string) Config::get('app.url', ''), '/');
+                    $orderUrl = "{$scheme}://{$host}{$basePath}/orderdetail.php?reference=" . urlencode((string) $notifyOrder['order']['order_reference']);
+
+                    (new NotificationService())->sendOrderStatusUpdate(
+                        (string) $customer['email'],
+                        (string) $customer['name'],
+                        (string) $notifyOrder['order']['order_reference'],
+                        OrderStatus::label($validator->value('to_status')),
+                        $orderUrl
+                    );
+                }
+            }
+
             Flash::success('Order status updated.');
         } catch (RuntimeException $e) {
             Flash::error($e->getMessage());
