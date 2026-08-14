@@ -40,22 +40,26 @@ final class OrderRepository
         string $total,
         string $paymentMethod,
         array $address,
-        ?string $customerNote = null
+        ?string $customerNote = null,
+        ?string $couponCode = null,
+        string $discountAmount = '0.00'
     ): int {
         $stmt = $this->db->prepare(
             'INSERT INTO orders
-                (order_reference, user_id, status, subtotal, total, payment_method,
-                 recipient_name, phone, address_line1, address_line2, city, customer_note)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                (order_reference, user_id, status, subtotal, total, coupon_code, discount_amount,
+                 payment_method, recipient_name, phone, address_line1, address_line2, city, customer_note)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
         $status = OrderStatus::PENDING;
         $stmt->bind_param(
-            'sissssssssss',
+            'sissssssssssss',
             $reference,
             $userId,
             $status,
             $subtotal,
             $total,
+            $couponCode,
+            $discountAmount,
             $paymentMethod,
             $address['recipient_name'],
             $address['phone'],

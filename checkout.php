@@ -3,26 +3,27 @@
 declare(strict_types=1);
 
 /**
- * Checkout — review the cart, choose a delivery address and payment method,
- * place the order.
+ * Checkout — review the cart, apply a coupon, choose a delivery address and
+ * payment method, place the order.
  *
  * GET renders the review screen; POST places the order (PROJECT_RULES.md §19
  * "HTTP methods"). The submit carries a single-use token so a double-click or
  * a refresh cannot create two orders (§8 "idempotency protection").
  *
  * Order creation happens inside one transaction in OrderService, which
- * re-locks and re-prices every product and independently verifies the address
- * belongs to the customer — this page never decides what anything costs or
- * trusts an address id at face value (Rule 6, §19 IDOR).
- *
- * PHASE 3: the shipping address is now chosen from the customer's own address
- * book instead of being fixed to whatever was entered at registration.
+ * re-locks and re-prices every product, independently verifies the address
+ * belongs to the customer, and independently re-validates/redeems the coupon
+ * — this page never decides what anything costs (Rule 6). The coupon code
+ * shown here is read from the session purely for display continuity across
+ * page loads; the actual discount applied is always recomputed server-side
+ * at order-placement time from the live coupon and cart state.
  */
 
 require_once __DIR__ . '/src/bootstrap.php';
 
 use App\Account\AddressRepository;
 use App\Cart\CartService;
+use App\Coupons\CouponRepository;
 use App\Notifications\NotificationService;
 use App\Orders\OrderService;
 use App\Orders\PaymentMethod;
@@ -34,6 +35,7 @@ use App\Support\Flash;
 use App\Support\Http;
 use App\Support\Logger;
 use App\Support\OneTimeToken;
+use App\Support\Session;
 use App\Support\Validator;
 use App\Support\View;
 
@@ -42,15 +44,70 @@ Auth::requireCustomer();
 $userId    = (int) Auth::id();
 $cart      = new CartService();
 $addresses = new AddressRepository();
+$coupons   = new CouponRepository();
 $summary   = $cart->summary();
 
-$placedOrder = null;
+$placedOrder  = null;
 $errorMessage = '';
+
+const COUPON_SESSION_KEY = '_checkout_coupon_code';
+
+/* ---------------------------------------------------------
+ | Coupon apply/remove (its own POST action — never places an order)
+ * --------------------------------------------------------- */
+if (Http::isPost() && in_array((string) ($_POST['action'] ?? ''), ['apply_coupon', 'remove_coupon'], true)) {
+    Csrf::verifyRequest();
+
+    if ((string) $_POST['action'] === 'remove_coupon') {
+        Session::forget(COUPON_SESSION_KEY);
+        Flash::success('Coupon removed.');
+    } else {
+        $code = trim((string) ($_POST['coupon_code'] ?? ''));
+
+        if ($code === '') {
+            Flash::error('Please enter a coupon code.');
+        } else {
+            try {
+                // Validated now purely to give immediate feedback; it is
+                // validated again — for real, with redemption — at order
+                // placement time, so nothing here is trusted later (Rule 6).
+                $coupons->validate($code, $summary['subtotal']);
+                Session::set(COUPON_SESSION_KEY, strtoupper($code));
+                Flash::success('Coupon applied.');
+            } catch (RuntimeException $e) {
+                Flash::error($e->getMessage());
+            }
+        }
+    }
+
+    Http::redirect('checkout.php');
+}
+
+/* ---------------------------------------------------------
+ | Recompute the coupon (if any) against the current cart on every load —
+ | the cart may have changed since the coupon was applied.
+ * --------------------------------------------------------- */
+$couponCode     = Session::get(COUPON_SESSION_KEY);
+$couponDiscount = '0.00';
+$couponError    = null;
+
+if ($couponCode !== null && $summary['items'] !== []) {
+    try {
+        $coupon         = $coupons->validate((string) $couponCode, $summary['subtotal']);
+        $couponDiscount = $coupons->calculateDiscount($coupon, $summary['subtotal']);
+    } catch (RuntimeException $e) {
+        $couponError = $e->getMessage();
+        Session::forget(COUPON_SESSION_KEY);
+        $couponCode = null;
+    }
+}
+
+$displayTotal = number_format((float) $summary['subtotal'] - (float) $couponDiscount, 2, '.', '');
 
 /* ---------------------------------------------------------
  | Place the order
  * --------------------------------------------------------- */
-if (Http::isPost()) {
+if (Http::isPost() && (string) ($_POST['action'] ?? '') === 'place_order') {
     Csrf::verifyRequest();
 
     if (!OneTimeToken::consume('checkout', OneTimeToken::fromRequest())) {
@@ -89,16 +146,15 @@ if (Http::isPost()) {
                 $lines,
                 (int) $validator->value('address_id'),
                 $validator->value('payment_method'),
-                $validator->value('note') ?: null
+                $validator->value('note') ?: null,
+                $couponCode !== null ? (string) $couponCode : null
             );
 
-            // Only emptied after the order committed successfully (§8
-            // "Clear cart only after successful order creation").
+            // Only emptied/cleared after the order committed successfully
+            // (§8 "Clear cart only after successful order creation").
             $cart->clear();
+            Session::forget(COUPON_SESSION_KEY);
 
-            // Sent after the order transaction has already committed, and
-            // never allowed to affect the confirmation shown to the customer
-            // (§20 "Email sending should not block checkout").
             $emailStmt = Database::connection()->prepare('SELECT email FROM users WHERE id = ? LIMIT 1');
             $emailStmt->bind_param('i', $userId);
             $emailStmt->execute();
@@ -131,7 +187,8 @@ if (Http::isPost()) {
         }
     }
 
-    // Refresh the cart view after a failure so the customer sees current state.
+    // Refresh the cart/coupon view after a failure so the customer sees
+    // current state.
     if ($placedOrder === null) {
         $summary = $cart->summary();
     }
@@ -159,8 +216,8 @@ if ($placedOrder === null && $summary['items'] === []) {
     exit;
 }
 
-$addressBook   = $placedOrder === null ? $addresses->forUser($userId) : [];
-$selectedAddr  = Http::intParam($_POST, 'address_id');
+$addressBook  = $placedOrder === null ? $addresses->forUser($userId) : [];
+$selectedAddr = Http::intParam($_POST, 'address_id');
 
 $orderDetail = $placedOrder !== null ? (new OrderService())->detail((int) $placedOrder['order_id']) : null;
 
@@ -207,7 +264,20 @@ require_once __DIR__ . '/includes/header.php';
                 </tbody>
                 <tfoot>
                     <tr>
-                        <th colspan="3" scope="row">Total</th>
+                        <th scope="row">Subtotal</th>
+                        <td colspan="2"></td>
+                        <th><?= View::money($placedOrder['subtotal']) ?></th>
+                    </tr>
+                    <?php if ((float) $placedOrder['discount_amount'] > 0): ?>
+                        <tr>
+                            <th scope="row">Discount<?= $placedOrder['coupon_code'] ? ' (' . View::e($placedOrder['coupon_code']) . ')' : '' ?></th>
+                            <td colspan="2"></td>
+                            <th class="movement-positive">&minus;<?= View::money($placedOrder['discount_amount']) ?></th>
+                        </tr>
+                    <?php endif; ?>
+                    <tr>
+                        <th scope="row">Total</th>
+                        <td colspan="2"></td>
                         <th><?= View::money($placedOrder['total']) ?></th>
                     </tr>
                 </tfoot>
@@ -245,6 +315,9 @@ require_once __DIR__ . '/includes/header.php';
     <?php if ($errorMessage !== ''): ?>
         <div class="alert alert-error" role="alert"><?= View::e($errorMessage) ?></div>
     <?php endif; ?>
+    <?php if ($couponError !== null): ?>
+        <div class="alert alert-error" role="alert"><?= View::e($couponError) ?></div>
+    <?php endif; ?>
 
     <?php if ($addressBook === []): ?>
         <div class="admin-card admin-card-wide">
@@ -253,17 +326,18 @@ require_once __DIR__ . '/includes/header.php';
             <a href="addresses.php?return=checkout.php" class="btn mt-16">Add a Delivery Address</a>
         </div>
     <?php else: ?>
-        <form method="post" action="checkout.php">
-            <?= Csrf::field() ?>
-            <?= OneTimeToken::field('checkout') ?>
+        <div class="cart-layout">
+            <div class="cart-items">
+                <div class="admin-card admin-card-wide">
+                    <div class="card-title-row">
+                        <h2 class="card-title" style="border:none; margin:0; padding:0;">Delivery Address</h2>
+                        <a href="addresses.php?return=checkout.php" class="link-button">Manage addresses</a>
+                    </div>
 
-            <div class="cart-layout">
-                <div class="cart-items">
-                    <div class="admin-card admin-card-wide">
-                        <div class="card-title-row">
-                            <h2 class="card-title" style="border:none; margin:0; padding:0;">Delivery Address</h2>
-                            <a href="addresses.php?return=checkout.php" class="link-button">Manage addresses</a>
-                        </div>
+                    <form method="post" action="checkout.php">
+                        <?= Csrf::field() ?>
+                        <?= OneTimeToken::field('checkout') ?>
+                        <input type="hidden" name="action" value="place_order">
 
                         <?php foreach ($addressBook as $addr): ?>
                             <div class="form-check payment-option">
@@ -283,10 +357,8 @@ require_once __DIR__ . '/includes/header.php';
                                 </label>
                             </div>
                         <?php endforeach; ?>
-                    </div>
 
-                    <div class="admin-card admin-card-wide mt-16">
-                        <h2 class="card-title">Payment Method</h2>
+                        <h2 class="card-title mt-16">Payment Method</h2>
 
                         <?php foreach (PaymentMethod::enabled() as $key => $label): ?>
                             <div class="form-check payment-option">
@@ -301,60 +373,86 @@ require_once __DIR__ . '/includes/header.php';
                             <label for="note">Order note <span class="optional">(optional)</span></label>
                             <textarea id="note" name="note" maxlength="500" placeholder="Delivery instructions, etc."></textarea>
                         </div>
-                    </div>
 
-                    <div class="admin-card admin-card-wide mt-16">
-                        <h2 class="card-title">Items (<?= $summary['count'] ?>)</h2>
+                        <div class="admin-card admin-card-wide mt-16" style="padding:0; box-shadow:none;">
+                            <h2 class="card-title">Items (<?= $summary['count'] ?>)</h2>
 
-                        <table class="plain-table">
-                            <thead>
-                                <tr>
-                                    <th scope="col">Product</th>
-                                    <th scope="col">Qty</th>
-                                    <th scope="col">Unit Price</th>
-                                    <th scope="col">Total</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($summary['items'] as $item): ?>
+                            <table class="plain-table">
+                                <thead>
                                     <tr>
-                                        <td><?= View::e($item['name']) ?></td>
-                                        <td><?= $item['quantity'] ?></td>
-                                        <td><?= View::money($item['unit_price']) ?></td>
-                                        <td><?= View::money($item['line_total']) ?></td>
+                                        <th scope="col">Product</th>
+                                        <th scope="col">Qty</th>
+                                        <th scope="col">Unit Price</th>
+                                        <th scope="col">Total</th>
                                     </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($summary['items'] as $item): ?>
+                                        <tr>
+                                            <td><?= View::e($item['name']) ?></td>
+                                            <td><?= $item['quantity'] ?></td>
+                                            <td><?= View::money($item['unit_price']) ?></td>
+                                            <td><?= View::money($item['line_total']) ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
 
-                        <p class="note mt-16"><a href="cart.php">Edit cart</a></p>
+                            <p class="note mt-16"><a href="cart.php">Edit cart</a></p>
+                        </div>
+
+                        <button type="submit" class="btn btn-block btn-lg mt-16">Place Order</button>
+                    </form>
+                </div>
+            </div>
+
+            <aside class="cart-summary">
+                <h2 class="card-title">Coupon</h2>
+                <?php if ($couponCode !== null): ?>
+                    <p>
+                        <span class="status-pill status-active"><?= View::e((string) $couponCode) ?></span>
+                        &minus;<?= View::money($couponDiscount) ?>
+                    </p>
+                    <form method="post" action="checkout.php" class="mb-16">
+                        <?= Csrf::field() ?>
+                        <input type="hidden" name="action" value="remove_coupon">
+                        <button type="submit" class="link-button">Remove coupon</button>
+                    </form>
+                <?php else: ?>
+                    <form method="post" action="checkout.php" class="coupon-form mb-16">
+                        <?= Csrf::field() ?>
+                        <input type="hidden" name="action" value="apply_coupon">
+                        <input type="text" name="coupon_code" placeholder="Coupon code" maxlength="30" style="text-transform:uppercase;">
+                        <button type="submit" class="btn btn-sm">Apply</button>
+                    </form>
+                <?php endif; ?>
+
+                <h2 class="card-title">Order Summary</h2>
+
+                <div class="summary-row">
+                    <span>Subtotal</span>
+                    <span><?= View::money($summary['subtotal']) ?></span>
+                </div>
+                <?php if ((float) $couponDiscount > 0): ?>
+                    <div class="summary-row">
+                        <span>Discount</span>
+                        <span class="movement-positive">&minus;<?= View::money($couponDiscount) ?></span>
                     </div>
+                <?php endif; ?>
+                <div class="summary-row">
+                    <span>Delivery</span>
+                    <span class="muted">Calculated at delivery</span>
+                </div>
+                <div class="summary-row summary-total">
+                    <span>Total</span>
+                    <span><?= View::money($displayTotal) ?></span>
                 </div>
 
-                <aside class="cart-summary">
-                    <h2 class="card-title">Order Summary</h2>
-
-                    <div class="summary-row">
-                        <span>Subtotal</span>
-                        <span><?= View::money($summary['subtotal']) ?></span>
-                    </div>
-                    <div class="summary-row">
-                        <span>Delivery</span>
-                        <span class="muted">Calculated at delivery</span>
-                    </div>
-                    <div class="summary-row summary-total">
-                        <span>Total</span>
-                        <span><?= View::money($summary['total']) ?></span>
-                    </div>
-
-                    <button type="submit" class="btn btn-block btn-lg">Place Order</button>
-
-                    <p class="note text-center mt-16">
-                        Stock and prices are confirmed when you place the order.
-                    </p>
-                </aside>
-            </div>
-        </form>
+                <p class="note text-center mt-16">
+                    Stock, prices and coupon validity are confirmed when you place the order.
+                </p>
+            </aside>
+        </div>
     <?php endif; ?>
 <?php endif; ?>
 
