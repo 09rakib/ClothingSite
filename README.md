@@ -5,12 +5,13 @@ Customers browse and buy products; admins manage the catalog from a separate
 seller panel.
 
 The codebase follows the engineering rules in [PROJECT_RULES.md](PROJECT_RULES.md),
-which is the project's architecture and security constitution. **Phases 0–4 are
+which is the project's architecture and security constitution. **Phases 0–5 are
 complete**: [Architecture & Safety Foundation](#phase-0--architecture--safety-foundation-complete),
 [Catalog Foundation](#phase-1--catalog-foundation-complete),
 [Cart & Checkout](#phase-2--cart--checkout-complete),
-[Orders & Address Book](#phase-3--orders--address-book-complete) and
-[Payment Abstraction](#phase-4--payment-abstraction-complete).
+[Orders & Address Book](#phase-3--orders--address-book-complete),
+[Payment Abstraction](#phase-4--payment-abstraction-complete) and
+[Customer Experience](#phase-5--customer-experience-complete).
 
 ## Tech Stack
 
@@ -64,21 +65,30 @@ git-ignored (§19 "Secrets").
 - Browse products on the Home and Shop pages
 - Search, filter by category, sort and paginate the catalog
 - Product detail pages at readable URLs (`product.php?slug=denim-pant`) with an
-  image gallery, stock state and related products
+  image gallery, stock state, reviews and related products
 - **Add to cart as a guest** — the cart follows you into your account on login
 - Update quantities, remove items, empty the cart
 - **Manage a full address book** (multiple addresses, one default)
 - Checkout: choose delivery address, payment method, add a note, review, place
 - Buy Now for a single item, skipping straight to checkout
-- Register / login (bcrypt hashes, rate-limited login)
+- Register / login (bcrypt hashes, rate-limited login) and **reset a forgotten
+  password by email**
+- Edit your name/phone and change your password from **My Profile**
+- **Save products to a wishlist** and move them to cart later
+- **Leave a review** on any product you actually received (rating + text) —
+  gated on a real delivered order, not just a checkbox
 - Track order status on a real timeline (Pending → Confirmed → Processing →
   Shipped → Delivered, or Cancelled/Returned/Refunded)
 - Order history, one row per checkout regardless of item count
+- Receive email notifications: welcome, order confirmation, order status
+  changes, password reset
 
 **Admin (Seller Panel)**
 - Dashboard: order status breakdown, revenue, low/out of stock, customers
 - **Manage orders**: filter by status, search, view detail, transition status
-  with a note (only the legal next statuses are ever offered)
+  with a note (only the legal next statuses are ever offered) — the customer
+  is emailed automatically
+- **Moderate reviews**: hide, restore, or permanently delete
 - Add / update products with validated image upload, SKU and an optional
   per-product low-stock threshold
 - Manage each product's image gallery (upload, set primary, delete)
@@ -103,12 +113,16 @@ ClothingSite/
 │   ├── Catalog/                   ProductRepository, CategoryRepository,
 │   │                              ProductImageRepository
 │   ├── Cart/                      CartService, CartRepository
-│   ├── Account/                   AddressRepository
+│   ├── Account/                   AddressRepository, PasswordResetRepository
 │   ├── Orders/                    OrderService, OrderRepository, OrderStatus,
 │   │                              PaymentMethod
-│   └── Payments/                  PaymentGateway, PaymentGatewayFactory,
-│                                  CashOnDeliveryGateway, UnconfiguredGateway,
-│                                  PaymentTransactionRepository
+│   ├── Payments/                  PaymentGateway, PaymentGatewayFactory,
+│   │                              CashOnDeliveryGateway, UnconfiguredGateway,
+│   │                              PaymentTransactionRepository
+│   ├── Mail/                      Mailer, LogMailer, SmtpMailer, MailerFactory
+│   ├── Notifications/              NotificationService (composes the emails)
+│   ├── Wishlist/                  WishlistRepository
+│   └── Reviews/                   ReviewRepository
 ├── database/
 │   ├── migrate.php                Migration runner (+ backup)
 │   ├── migrations/                Versioned schema changes
@@ -252,17 +266,37 @@ Delivered flips its transaction to paid automatically; Returned → Refunded
 flips it to refunded; and a terminal-status order accepts no further changes
 from either the payment ledger or the order status machine.
 
+## Phase 5 — Customer Experience (complete)
+
+| Feature | Detail |
+|---|---|
+| Password reset | `forgot-password.php` / `reset-password.php`. Single-use, expiring, SHA-256-hashed tokens; identical response whether or not the email exists (anti-enumeration, same pattern as login). |
+| Real email | `Mailer` abstraction with a genuinely working `LogMailer` default (writes to `storage/logs/mail/`, standard practice for an environment with no SMTP account — not a stub) and a real `SmtpMailer` (PHPMailer) that sends for real the moment credentials are configured. Welcome, order confirmation, order status change, and password reset all go through it. |
+| Profile | Edit name/phone; change password (current password required). Email is fixed — it's the login identity. |
+| Wishlist | Save/remove products, heart-toggle on the shop grid and product page, "Move to Cart." Archived products never appear. |
+| Reviews | Rating + text, one per customer per product (a second submission edits the first). **Strictly gated on a delivered order** — enforced server-side even against a forged POST, not just a hidden form. Admin can hide/restore/delete. |
+| Email verification | **Deliberately not built** — see PROJECT_RULES.md for why gating login on unverifiable delivery would be worse than the status quo. |
+
+Verified end-to-end with a real mailbox-free pipeline: registering captured a
+welcome email; requesting a password reset captured a real token that was
+extracted from the log file and used to actually change a password (old
+password then failed, new one worked, the same link replayed after was
+rejected); a customer's review attempt before delivery was blocked, and after
+delivery the same form succeeded with a "Verified Purchase" badge; a
+non-purchaser's forged review POST was rejected server-side with zero rows
+written; and admin hide/restore of a review immediately changed what the
+product page showed.
+
 ## Roadmap
 
-Phases 0–4 are done for the scope this project has real credentials for.
+Phases 0–5 are done for the scope this project has real credentials for.
 Next, in the order PROJECT_RULES.md §37 recommends: inventory movement
-tracking → customer profile editing/password reset → email notifications →
-reviews → wishlist → blog CMS → roles & permissions → analytics → audit logs
-→ production hardening.
+tracking → blog CMS → roles & permissions → analytics → audit logs →
+production hardening.
 
-Known gaps deliberately **not** addressed yet: real email delivery, password
-reset, profile editing beyond addresses, reviews, wishlist, and real bKash/card
-payment (COD only, by design — see Phase 4 above).
+Known gaps deliberately **not** addressed: email verification (see Phase 5),
+real bKash/card payment (COD only, by design — see Phase 4), blog/CMS content
+management, staff roles beyond admin/customer, and analytics/audit logging.
 
 ## Author
 

@@ -97,6 +97,36 @@ $config = [
             'card'             => ['label' => 'Card',             'enabled' => false],
         ],
     ],
+
+    /* ---------------------------------------------------------------
+     | Mail (§20 "Email & Notifications")
+     *
+     * 'mailer' => 'log' (default) writes every message to
+     * storage/logs/mail/ instead of a real inbox — no SMTP account exists
+     * for this project. Set 'mailer' => 'smtp' and fill in smtp.* (normally
+     * in the git-ignored config.local.php) to send for real.
+     * --------------------------------------------------------------- */
+    'mail' => [
+        'mailer'      => 'log',
+        'from_address' => 'no-reply@shirtpantstore.local',
+        'from_name'    => 'Shirt & Pant Store',
+        'smtp' => [
+            'host'       => '',
+            'port'       => 587,
+            'username'   => '',
+            'password'   => '',
+            'encryption' => 'tls',
+        ],
+    ],
+
+    /* ---------------------------------------------------------------
+     | Reviews (§14)
+     * --------------------------------------------------------------- */
+    'reviews' => [
+        // Only customers who actually bought (and had delivered) the product
+        // may review it — a real "verified purchase" gate, not a checkbox.
+        'require_verified_purchase' => true,
+    ],
 ];
 
 // Local overrides (git-ignored) — keeps credentials out of version control.

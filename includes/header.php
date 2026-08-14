@@ -73,7 +73,9 @@ $metaDescription = $metaDescription
                     <li><a href="admin/seller.php" class="cta">Admin Panel</a></li>
                 <?php else: ?>
                     <li><a href="myorder.php" class="<?= in_array($currentPage, ['myorder.php', 'orderdetail.php'], true) ? 'active' : '' ?>">My Orders</a></li>
+                    <li><a href="wishlist.php" class="<?= $currentPage === 'wishlist.php' ? 'active' : '' ?>">Wishlist</a></li>
                     <li><a href="addresses.php" class="<?= $currentPage === 'addresses.php' ? 'active' : '' ?>">Addresses</a></li>
+                    <li><a href="profile.php" class="<?= $currentPage === 'profile.php' ? 'active' : '' ?>">Profile</a></li>
                 <?php endif; ?>
                 <?php
                 /*

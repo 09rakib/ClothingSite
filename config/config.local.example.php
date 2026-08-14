@@ -23,4 +23,15 @@ return [
 
     // In production also set:
     // 'security' => ['cookie_secure' => true],
+
+    // To send real email instead of logging it to storage/logs/mail/:
+    // 'mail' => [
+    //     'mailer' => 'smtp',
+    //     'smtp' => [
+    //         'host'     => 'smtp.example.com',
+    //         'port'     => 587,
+    //         'username' => 'apikey-or-username',
+    //         'password' => 'secret',
+    //     ],
+    // ],
 ];

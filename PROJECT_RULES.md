@@ -1099,13 +1099,54 @@ whenever credentials exist.
 
 ## Phase 5 --- Customer Experience
 
--   [ ] Profile edit.
--   [ ] Address book.
--   [ ] Forgot/reset password.
--   [ ] Email verification.
--   [ ] Real email notifications.
--   [ ] Wishlist.
--   [ ] Reviews/ratings.
+**STATUS: COMPLETE except email verification, deliberately deferred
+(2026-08-14)**
+
+-   [x] Profile edit. --- `profile.php`: name/phone editable; email is not
+    (it is the login identity) with a note pointing to support.
+-   [x] Address book. --- Delivered in Phase 3, ahead of schedule.
+-   [x] Forgot/reset password. --- `forgot-password.php` / `reset-password.php`.
+    Tokens are single-use and expiring; only a SHA-256 hash is ever stored
+    (§19); the response is identical whether or not the email exists, the
+    same anti-enumeration pattern login.php already used.
+-   [~] Email verification. --- **Deferred, not built.** §19 lists this as
+    "Optional" explicitly, unlike the other items on this list. Building it
+    now would mean gating login on a verification step for a store that
+    cannot yet guarantee real-world mail delivery (no SMTP configured) —
+    doing so would risk locking a real customer out of an account they
+    genuinely registered. Revisit once `mail.mailer` is set to `smtp` with
+    real credentials.
+-   [x] Real email notifications. --- `App\Mail\Mailer` abstraction (§20).
+    Welcome email on registration, order confirmation at checkout, order
+    status-change email on every admin transition, password reset link.
+    Defaults to `LogMailer` (writes to `storage/logs/mail/`, the same
+    convention Laravel/Symfony ship as their local "log" driver) since no
+    SMTP account exists for this project; `SmtpMailer` (via PHPMailer) sends
+    for real once `config.local.php` supplies credentials — no code changes
+    needed to switch.
+-   [x] Wishlist. --- `wishlist_items` table, `WishlistRepository`,
+    `wishlist.php`, heart-toggle buttons on the shop grid and product page.
+    "Move to Cart" action. Archived products never appear in the list.
+-   [x] Reviews/ratings. --- `reviews` table, `ReviewRepository`,
+    submission form + display on the product page, admin moderation
+    (`admin/reviews.php`: hide/restore/delete). **Eligibility is strict**: a
+    customer may only review a product from a **Delivered** order they
+    placed — enforced server-side even against a forged POST bypassing the
+    UI, not merely hidden by not rendering the form (§19 "UI hiding is not
+    security"). One review per customer per product; a second submission
+    updates the existing one (§14 explicitly allows this).
+
+### Why email verification specifically was skipped
+
+Every other Phase 5 item was buildable to a genuinely working state without
+external dependencies this project lacks. Email verification is different: its
+entire value proposition — proving the address is real and reachable — is void
+without functioning delivery, and gating account access on an unverifiable
+step would be worse than not having the feature. The password reset flow
+proves the mail pipeline itself works end-to-end (a real token was generated,
+captured by LogMailer, and used to reset a real password in verification
+testing); verification email is the same mechanism, deferred only because
+gating login on it isn't safe yet.
 
 ## Phase 6 --- Admin & Operations
 

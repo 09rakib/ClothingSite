@@ -15,10 +15,15 @@ require_once __DIR__ . '/src/bootstrap.php';
 
 use App\Catalog\ProductImageRepository;
 use App\Catalog\ProductRepository;
+use App\Reviews\ReviewRepository;
 use App\Support\Auth;
 use App\Support\Csrf;
+use App\Support\Flash;
 use App\Support\Http;
+use App\Support\Logger;
+use App\Support\Validator;
 use App\Support\View;
+use App\Wishlist\WishlistRepository;
 
 $products = new ProductRepository();
 
@@ -68,6 +73,58 @@ $gallery   = (new ProductImageRepository())->forProduct($productId);
 $related   = $products->relatedTo($productId, $product['category_id'] !== null ? (int) $product['category_id'] : null);
 
 $canBuy = Auth::check() && Auth::isCustomer();
+
+$reviews      = new ReviewRepository();
+$reviewErrors = [];
+
+// Review submission — only a customer who actually received a delivered
+// order containing this product may post one (see ReviewRepository's
+// docblock for why this is strict rather than open to anyone).
+if (Http::isPost() && (string) ($_POST['action'] ?? '') === 'submit_review') {
+    Csrf::verifyRequest();
+    Auth::requireCustomer();
+
+    if (!$reviews->isEligible((int) Auth::id(), $productId)) {
+        Flash::error('Only customers who have received this product may leave a review.');
+        Http::redirect('product.php?slug=' . urlencode($slug));
+    }
+
+    $validator = (new Validator($_POST))
+        ->label('rating', 'Rating')
+        ->label('title', 'Title')
+        ->label('body', 'Review')
+        ->required('rating')->integer('rating', 1, 5)
+        ->maxLength('title', 120)
+        ->required('body')->minLength('body', 10)->maxLength('body', 2000);
+
+    if ($validator->passes()) {
+        try {
+            $reviews->upsert(
+                $productId,
+                (int) Auth::id(),
+                (int) $validator->value('rating'),
+                $validator->value('title') ?: null,
+                $validator->value('body')
+            );
+            Flash::success('Thanks — your review has been posted.');
+            Http::redirect('product.php?slug=' . urlencode($slug));
+        } catch (Throwable $e) {
+            Logger::error('Review submission failed', ['product_id' => $productId, 'error' => $e->getMessage()]);
+            Flash::error('Could not save your review. Please try again.');
+        }
+    }
+
+    $reviewErrors = $validator->errors();
+}
+
+$reviewSummary   = $reviews->summaryForProduct($productId);
+$productReviews  = $reviews->forProduct($productId);
+$myReview        = Auth::check() && Auth::isCustomer() ? $reviews->findByUser($productId, (int) Auth::id()) : null;
+$canReview       = Auth::check() && Auth::isCustomer() && $reviews->isEligible((int) Auth::id(), $productId);
+
+$isWishlisted = Auth::check() && Auth::isCustomer()
+    ? (new WishlistRepository())->contains((int) Auth::id(), $productId)
+    : false;
 
 $pageTitle       = (string) $product['name'];
 $metaDescription = mb_substr((string) $product['description'], 0, 155);
@@ -119,6 +176,13 @@ require_once __DIR__ . '/includes/header.php';
             <?php endif; ?>
 
             <p class="product-detail-price"><?= View::money($product['price']) ?></p>
+
+            <?php if ($reviewSummary['count'] > 0): ?>
+                <p class="review-summary">
+                    <span class="stars" aria-hidden="true"><?= str_repeat('★', (int) round($reviewSummary['average'])) . str_repeat('☆', 5 - (int) round($reviewSummary['average'])) ?></span>
+                    <span><?= $reviewSummary['average'] ?> out of 5 (<?= $reviewSummary['count'] ?> review<?= $reviewSummary['count'] === 1 ? '' : 's' ?>)</span>
+                </p>
+            <?php endif; ?>
 
             <p class="product-stock-line">
                 <?php if ($stock <= 0): ?>
@@ -180,6 +244,18 @@ require_once __DIR__ . '/includes/header.php';
                 <span class="btn btn-block btn-disabled btn-lg" aria-disabled="true">Out of Stock</span>
             <?php endif; ?>
 
+            <?php if ($canBuy): ?>
+                <form method="post" action="wishaction.php" class="mt-8">
+                    <?= Csrf::field() ?>
+                    <input type="hidden" name="action" value="<?= $isWishlisted ? 'remove' : 'add' ?>">
+                    <input type="hidden" name="product_id" value="<?= $productId ?>">
+                    <input type="hidden" name="return_slug" value="<?= View::e($product['slug']) ?>">
+                    <button type="submit" class="btn btn-block btn-outline" style="background:var(--color-primary);">
+                        <?= $isWishlisted ? '♥ Saved to Wishlist' : '♡ Add to Wishlist' ?>
+                    </button>
+                </form>
+            <?php endif; ?>
+
             <ul class="product-perks">
                 <li>Cash on delivery available</li>
                 <li>Delivery across Bangladesh</li>
@@ -187,6 +263,78 @@ require_once __DIR__ . '/includes/header.php';
             </ul>
         </div>
     </div>
+
+    <section class="reviews-section">
+        <h2 class="page-heading">
+            Reviews
+            <?php if ($reviewSummary['count'] > 0): ?>
+                (<?= $reviewSummary['average'] ?>/5, <?= $reviewSummary['count'] ?>)
+            <?php endif; ?>
+        </h2>
+
+        <?php if ($reviewErrors !== []): ?>
+            <div class="alert alert-error" role="alert">
+                <?php foreach ($reviewErrors as $message): ?>
+                    <div><?= View::e($message) ?></div>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($canReview): ?>
+            <div class="admin-card admin-card-wide review-form-card">
+                <h3 class="card-subtitle"><?= $myReview ? 'Edit your review' : 'Write a review' ?></h3>
+                <form method="post" action="product.php?slug=<?= urlencode($slug) ?>" novalidate>
+                    <?= Csrf::field() ?>
+                    <input type="hidden" name="action" value="submit_review">
+
+                    <div class="form-group">
+                        <label for="rating">Rating</label>
+                        <select name="rating" id="rating" required>
+                            <?php for ($i = 5; $i >= 1; $i--): ?>
+                                <option value="<?= $i ?>" <?= ($myReview['rating'] ?? 5) == $i ? 'selected' : '' ?>>
+                                    <?= str_repeat('★', $i) ?> (<?= $i ?>)
+                                </option>
+                            <?php endfor; ?>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="title">Title <span class="optional">(optional)</span></label>
+                        <input type="text" id="title" name="title" maxlength="120" value="<?= View::e($myReview['title'] ?? '') ?>">
+                    </div>
+                    <div class="form-group">
+                        <label for="body">Your review</label>
+                        <textarea id="body" name="body" maxlength="2000" required><?= View::e($myReview['body'] ?? '') ?></textarea>
+                    </div>
+                    <button type="submit" class="btn"><?= $myReview ? 'Update Review' : 'Post Review' ?></button>
+                </form>
+            </div>
+        <?php elseif (Auth::check() && Auth::isCustomer() && $myReview === null): ?>
+            <p class="note">Only customers who have received this product can leave a review.</p>
+        <?php endif; ?>
+
+        <?php if ($productReviews === []): ?>
+            <p class="muted">No reviews yet<?= $canReview ? '' : ' for this product' ?>.</p>
+        <?php else: ?>
+            <div class="review-list">
+                <?php foreach ($productReviews as $review): ?>
+                    <div class="review-item">
+                        <div class="review-item-header">
+                            <span class="stars" aria-hidden="true"><?= str_repeat('★', (int) $review['rating']) . str_repeat('☆', 5 - (int) $review['rating']) ?></span>
+                            <strong><?= View::e($review['reviewer_name']) ?></strong>
+                            <?php if ($review['verified_purchase']): ?>
+                                <span class="status-pill status-active">Verified Purchase</span>
+                            <?php endif; ?>
+                            <span class="muted review-item-date"><?= View::e(date('d M Y', strtotime((string) $review['created_at']))) ?></span>
+                        </div>
+                        <?php if (!empty($review['title'])): ?>
+                            <p class="review-item-title"><?= View::e($review['title']) ?></p>
+                        <?php endif; ?>
+                        <p><?= nl2br(View::e($review['body'])) ?></p>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+    </section>
 
     <?php if ($related !== []): ?>
         <section class="related-section">

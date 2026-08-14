@@ -23,10 +23,13 @@ require_once __DIR__ . '/src/bootstrap.php';
 
 use App\Account\AddressRepository;
 use App\Cart\CartService;
+use App\Notifications\NotificationService;
 use App\Orders\OrderService;
 use App\Orders\PaymentMethod;
 use App\Support\Auth;
+use App\Support\Config;
 use App\Support\Csrf;
+use App\Support\Database;
 use App\Support\Flash;
 use App\Support\Http;
 use App\Support\Logger;
@@ -92,6 +95,31 @@ if (Http::isPost()) {
             // Only emptied after the order committed successfully (§8
             // "Clear cart only after successful order creation").
             $cart->clear();
+
+            // Sent after the order transaction has already committed, and
+            // never allowed to affect the confirmation shown to the customer
+            // (§20 "Email sending should not block checkout").
+            $emailStmt = Database::connection()->prepare('SELECT email FROM users WHERE id = ? LIMIT 1');
+            $emailStmt->bind_param('i', $userId);
+            $emailStmt->execute();
+            $customerEmail = (string) ($emailStmt->get_result()->fetch_assoc()['email'] ?? '');
+            $emailStmt->close();
+
+            $scheme   = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $host     = (string) ($_SERVER['HTTP_HOST'] ?? 'localhost');
+            $basePath = rtrim((string) Config::get('app.url', ''), '/');
+            $orderUrl = "{$scheme}://{$host}{$basePath}/orderdetail.php?reference=" . urlencode($placedOrder['reference']);
+
+            if ($customerEmail !== '') {
+                (new NotificationService())->sendOrderConfirmation(
+                    $customerEmail,
+                    Auth::name(),
+                    $placedOrder['reference'],
+                    $placedOrder['lines'],
+                    $placedOrder['total'],
+                    $orderUrl
+                );
+            }
         } catch (RuntimeException $e) {
             $errorMessage = $e->getMessage();
         } catch (Throwable $e) {

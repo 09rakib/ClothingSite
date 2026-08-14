@@ -138,6 +138,7 @@ if (Http::isPost()) {
                     <label for="password">Password</label>
                     <input type="password" id="password" name="password" required autocomplete="current-password">
                 </div>
+                <p class="note" style="text-align:right; margin-top:-8px;"><a href="forgot-password.php">Forgot password?</a></p>
                 <button type="submit" class="btn btn-block">Login</button>
             </form>
 
