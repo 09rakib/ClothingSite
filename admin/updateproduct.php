@@ -16,9 +16,11 @@ declare(strict_types=1);
 $pageTitle = 'Update Product';
 require_once __DIR__ . '/../includes/admin-header.php';
 
+use App\Audit\AuditLogger;
 use App\Catalog\CategoryRepository;
 use App\Catalog\ProductImageRepository;
 use App\Catalog\ProductRepository;
+use App\Support\Auth;
 use App\Support\Csrf;
 use App\Support\Flash;
 use App\Support\Http;
@@ -121,6 +123,7 @@ if (Http::isPost()) {
             }
 
             Logger::info('Product updated', ['product_id' => $productId]);
+            (new AuditLogger())->log((int) Auth::id(), 'product.updated', 'product', $productId, ['name' => $validator->value('name')]);
 
             Flash::success('Product updated successfully.');
             Http::redirect('displayproduct.php');

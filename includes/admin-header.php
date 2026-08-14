@@ -46,7 +46,12 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <li><a href="addProduct.php" class="<?= $currentPage === 'addProduct.php' ? 'active' : '' ?>">Add Product</a></li>
             <li><a href="displayproduct.php" class="<?= in_array($currentPage, ['displayproduct.php', 'updateproduct.php', 'productimages.php'], true) ? 'active' : '' ?>">View Products</a></li>
             <li><a href="categories.php" class="<?= $currentPage === 'categories.php' ? 'active' : '' ?>">Categories</a></li>
+            <li><a href="inventory.php" class="<?= $currentPage === 'inventory.php' ? 'active' : '' ?>">Inventory</a></li>
             <li><a href="reviews.php" class="<?= $currentPage === 'reviews.php' ? 'active' : '' ?>">Reviews</a></li>
+            <li><a href="contacts.php" class="<?= $currentPage === 'contacts.php' ? 'active' : '' ?>">Contact Inbox</a></li>
+            <li><a href="blog.php" class="<?= $currentPage === 'blog.php' ? 'active' : '' ?>">Blog</a></li>
+            <li><a href="users.php" class="<?= $currentPage === 'users.php' ? 'active' : '' ?>">Users</a></li>
+            <li><a href="auditlog.php" class="<?= $currentPage === 'auditlog.php' ? 'active' : '' ?>">Audit Log</a></li>
             <li><a href="../index.php">Visit Store</a></li>
             <li>
                 <form method="post" action="../logout.php" class="nav-inline-form">

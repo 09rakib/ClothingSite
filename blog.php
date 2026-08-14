@@ -1,40 +1,55 @@
 <?php
+
+declare(strict_types=1);
+
+/**
+ * Public blog listing (PROJECT_RULES.md §21), backed by the real
+ * `blog_posts` table now instead of a hardcoded array.
+ */
+
 $pageTitle = 'Blog';
 require_once __DIR__ . '/includes/header.php';
 
-/* Static placeholder posts — replace with a real `posts` table later if needed */
-$posts = [
-    [
-        'title' => 'How to Pick the Right Shirt Fit',
-        'date'  => 'January 2026',
-        'excerpt' => 'A quick guide to reading size charts and choosing a fit that actually looks good.',
-    ],
-    [
-        'title' => 'Caring for Cotton Fabric',
-        'date'  => 'December 2025',
-        'excerpt' => 'Simple washing and ironing tips to keep your shirts looking new for longer.',
-    ],
-    [
-        'title' => 'Building a Minimal Wardrobe',
-        'date'  => 'November 2025',
-        'excerpt' => 'A handful of shirts and pants that mix and match into weeks of outfits.',
-    ],
-];
+use App\Blog\BlogRepository;
+use App\Support\Http;
+use App\Support\View;
+
+$page   = Http::intParam($_GET, 'page') ?? 1;
+$result = (new BlogRepository())->paginatePublished($page);
 ?>
 
 <div class="container">
     <h1 class="page-heading">Blog</h1>
     <p class="page-subheading">Style notes and fabric care tips</p>
 
-    <div class="blog-grid">
-        <?php foreach ($posts as $post): ?>
-            <div class="blog-card">
-                <div class="blog-date"><?php echo htmlspecialchars($post['date']); ?></div>
-                <h3><?php echo htmlspecialchars($post['title']); ?></h3>
-                <p><?php echo htmlspecialchars($post['excerpt']); ?></p>
-            </div>
-        <?php endforeach; ?>
-    </div>
+    <?php if ($result['items'] === []): ?>
+        <div class="empty-state">No posts yet. Check back soon.</div>
+    <?php else: ?>
+        <div class="blog-grid">
+            <?php foreach ($result['items'] as $post): ?>
+                <a href="blogpost.php?slug=<?= urlencode((string) $post['slug']) ?>" class="blog-card blog-card-link">
+                    <?php if (!empty($post['featured_image'])): ?>
+                        <img src="assets/images/blog/<?= View::e($post['featured_image']) ?>" alt="" loading="lazy" class="blog-card-image">
+                    <?php endif; ?>
+                    <div class="blog-date"><?= View::e(date('F Y', strtotime((string) $post['published_at']))) ?></div>
+                    <h3><?= View::e($post['title']) ?></h3>
+                    <p><?= View::e((string) $post['excerpt']) ?></p>
+                </a>
+            <?php endforeach; ?>
+        </div>
+
+        <?php if ($result['pages'] > 1): ?>
+            <nav class="pagination" aria-label="Blog pages">
+                <?php for ($i = 1; $i <= $result['pages']; $i++): ?>
+                    <?php if ($i === $result['page']): ?>
+                        <span class="page-link current" aria-current="page"><?= $i ?></span>
+                    <?php else: ?>
+                        <a href="blog.php?page=<?= $i ?>" class="page-link"><?= $i ?></a>
+                    <?php endif; ?>
+                <?php endfor; ?>
+            </nav>
+        <?php endif; ?>
+    <?php endif; ?>
 </div>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

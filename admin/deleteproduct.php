@@ -21,6 +21,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../src/bootstrap.php';
 
+use App\Audit\AuditLogger;
 use App\Catalog\ProductRepository;
 use App\Support\Auth;
 use App\Support\Flash;
@@ -49,10 +50,12 @@ if ($product === null) {
 if ($action === 'restore') {
     $repository->restore($productId);
     Logger::info('Product restored', ['product_id' => $productId, 'admin_id' => Auth::id()]);
+    (new AuditLogger())->log((int) Auth::id(), 'product.restored', 'product', $productId);
     Flash::success(sprintf('"%s" is back on sale.', $product['name']));
 } else {
     $repository->archive($productId);
     Logger::info('Product archived', ['product_id' => $productId, 'admin_id' => Auth::id()]);
+    (new AuditLogger())->log((int) Auth::id(), 'product.archived', 'product', $productId);
 
     // Tell the admin plainly that history was preserved, so "delete" not
     // wiping the row is understood as intentional rather than a bug.

@@ -38,6 +38,9 @@ abstract class DatabaseTestCase extends TestCase
         // ON DELETE CASCADE, so without this its rows survive and leak into
         // the next test.
         foreach ([
+            'audit_logs',
+            'blog_posts',
+            'inventory_movements',
             'reviews',
             'wishlist_items',
             'password_reset_tokens',

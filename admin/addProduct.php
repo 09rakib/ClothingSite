@@ -14,9 +14,11 @@ declare(strict_types=1);
 $pageTitle = 'Add Product';
 require_once __DIR__ . '/../includes/admin-header.php';
 
+use App\Audit\AuditLogger;
 use App\Catalog\CategoryRepository;
 use App\Catalog\ProductImageRepository;
 use App\Catalog\ProductRepository;
+use App\Support\Auth;
 use App\Support\Csrf;
 use App\Support\Flash;
 use App\Support\Http;
@@ -92,6 +94,7 @@ if (Http::isPost()) {
             (new ProductImageRepository())->add($newProductId, $imageName, null, true);
 
             Logger::info('Product created', ['product_id' => $newProductId]);
+            (new AuditLogger())->log((int) Auth::id(), 'product.created', 'product', $newProductId, ['name' => $validator->value('name')]);
 
             // POST/Redirect/GET so a refresh cannot create a second product.
             Flash::success('Product added successfully.');
