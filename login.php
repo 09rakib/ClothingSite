@@ -55,13 +55,22 @@ if (Http::isPost()) {
     } else {
         $conn = Database::connection();
 
-        $stmt = $conn->prepare('SELECT id, name, password, role FROM users WHERE email = ? LIMIT 1');
+        $stmt = $conn->prepare('SELECT id, name, password, role, status FROM users WHERE email = ? LIMIT 1');
         $stmt->bind_param('s', $oldEmail);
         $stmt->execute();
         $user = $stmt->get_result()->fetch_assoc();
         $stmt->close();
 
-        if ($user && password_verify($validator->value('password'), $user['password'])) {
+        $passwordCorrect = $user && password_verify($validator->value('password'), $user['password']);
+
+        if ($passwordCorrect && $user['status'] === 'suspended') {
+            // The password was correct, so this account genuinely belongs to
+            // whoever is signing in — telling them it is suspended here is
+            // not an enumeration risk the way a generic wrong-password
+            // message protects against (§16 "User management"). The rate
+            // limiter hit below still applies once, not twice.
+            $errorMessage = 'This account has been suspended. Please contact support.';
+        } elseif ($passwordCorrect) {
             // Re-hash transparently if PHP's default cost/algorithm changed.
             if (password_needs_rehash($user['password'], PASSWORD_DEFAULT)) {
                 $newHash = password_hash($validator->value('password'), PASSWORD_DEFAULT);
@@ -94,8 +103,12 @@ if (Http::isPost()) {
         RateLimiter::hit($throttleKey);
 
         // Deliberately identical for "no such account" and "wrong password"
-        // so the form cannot confirm which emails are registered.
-        $errorMessage = 'Incorrect email or password.';
+        // so the form cannot confirm which emails are registered. Does not
+        // overwrite the suspended-account message set above, which is
+        // intentionally more specific (see that branch's comment).
+        if ($errorMessage === '') {
+            $errorMessage = 'Incorrect email or password.';
+        }
     }
 }
 ?>

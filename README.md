@@ -5,13 +5,14 @@ Customers browse and buy products; admins manage the catalog from a separate
 seller panel.
 
 The codebase follows the engineering rules in [PROJECT_RULES.md](PROJECT_RULES.md),
-which is the project's architecture and security constitution. **Phases 0–5 are
+which is the project's architecture and security constitution. **Phases 0–6 are
 complete**: [Architecture & Safety Foundation](#phase-0--architecture--safety-foundation-complete),
 [Catalog Foundation](#phase-1--catalog-foundation-complete),
 [Cart & Checkout](#phase-2--cart--checkout-complete),
 [Orders & Address Book](#phase-3--orders--address-book-complete),
-[Payment Abstraction](#phase-4--payment-abstraction-complete) and
-[Customer Experience](#phase-5--customer-experience-complete).
+[Payment Abstraction](#phase-4--payment-abstraction-complete),
+[Customer Experience](#phase-5--customer-experience-complete) and
+[Admin & Operations](#phase-6--admin--operations-complete).
 
 ## Tech Stack
 
@@ -87,8 +88,16 @@ git-ignored (§19 "Secrets").
 - Dashboard: order status breakdown, revenue, low/out of stock, customers
 - **Manage orders**: filter by status, search, view detail, transition status
   with a note (only the legal next statuses are ever offered) — the customer
-  is emailed automatically
+  is emailed automatically; returning an order restocks it
+- **Manage inventory**: current stock per product, manual adjustment
+  (reason required), full movement history (sales, returns, adjustments)
+- **Manage users**: search, suspend/reactivate, promote/demote admin — the
+  store can never be left with zero active admins
 - **Moderate reviews**: hide, restore, or permanently delete
+- **Contact inbox**: view and progress support messages (new → in
+  progress → resolved/closed)
+- **Blog CMS**: create, edit, publish/draft posts
+- **Audit log**: every significant admin action recorded and browsable
 - Add / update products with validated image upload, SKU and an optional
   per-product low-stock threshold
 - Manage each product's image gallery (upload, set primary, delete)
@@ -122,7 +131,11 @@ ClothingSite/
 │   ├── Mail/                      Mailer, LogMailer, SmtpMailer, MailerFactory
 │   ├── Notifications/              NotificationService (composes the emails)
 │   ├── Wishlist/                  WishlistRepository
-│   └── Reviews/                   ReviewRepository
+│   ├── Reviews/                   ReviewRepository
+│   ├── Inventory/                 InventoryRepository (stock movement ledger)
+│   ├── Users/                     UserRepository (admin user management)
+│   ├── Blog/                      BlogRepository
+│   └── Audit/                     AuditLogger
 ├── database/
 │   ├── migrate.php                Migration runner (+ backup)
 │   ├── migrations/                Versioned schema changes
@@ -287,16 +300,37 @@ non-purchaser's forged review POST was rejected server-side with zero rows
 written; and admin hide/restore of a review immediately changed what the
 product page showed.
 
+## Phase 6 — Admin & Operations (complete)
+
+| Feature | Detail |
+|---|---|
+| Inventory ledger | `inventory_movements`: every sale, return and manual adjustment logged. `products.stock` stays the fast-read value; the ledger answers "why." |
+| **Returns now restock** | A genuine behavioural change: marking an order Returned used to leave stock untouched. It now restocks every line item and logs the movement. |
+| User management | Search, suspend (blocks login, never deletes — preserves order history), reactivate, promote/demote admin. Refuses to leave the store with zero active admins. |
+| Contact inbox | The other half of a feature that has quietly worked since Phase 0 — `contact.php` was already saving real messages with no way to read them back. |
+| Blog CMS | Real `blog_posts` table replaces the hardcoded array. Drafts are genuinely 404 at their public URL, not just hidden from the listing. |
+| Audit log | Every significant admin action — order status, product/category CRUD, review moderation, user management, blog posts — recorded with actor, action, entity and metadata. Separate from technical error logs, per §23. |
+| Staff roles/permissions | **Deliberately kept minimal** — §17 itself says not to add role complexity a two-role store doesn't need yet. |
+
+Verified end-to-end: a manual stock adjustment without a reason is rejected;
+suspending an account immediately blocks its next login with a specific
+message, reactivating restores it; the last active admin cannot be suspended
+or demoted; a submitted contact message appears in the inbox and its status
+filter works; a draft blog post is invisible on the listing and 404s directly,
+publishing makes it live immediately; and every action above appears correctly
+in the audit log, filterable by entity type.
+
 ## Roadmap
 
-Phases 0–5 are done for the scope this project has real credentials for.
-Next, in the order PROJECT_RULES.md §37 recommends: inventory movement
-tracking → blog CMS → roles & permissions → analytics → audit logs →
-production hardening.
+Phases 0–6 are done for the scope this project has real credentials and
+genuine need for. Remaining PROJECT_RULES.md §37 items — analytics/reporting,
+coupons/promotions, deeper production hardening (monitoring, staging,
+deployment automation) — are Phase 7/8 territory for when the store has real
+traffic to analyze and a production environment to harden.
 
-Known gaps deliberately **not** addressed: email verification (see Phase 5),
-real bKash/card payment (COD only, by design — see Phase 4), blog/CMS content
-management, staff roles beyond admin/customer, and analytics/audit logging.
+Known gaps deliberately **not** addressed: email verification (Phase 5), real
+bKash/card payment (Phase 4, COD only by design), and staff roles beyond
+admin/customer (Phase 6, per §17's own guidance against premature complexity).
 
 ## Author
 

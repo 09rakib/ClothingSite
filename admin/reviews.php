@@ -13,7 +13,9 @@ declare(strict_types=1);
 $pageTitle = 'Reviews';
 require_once __DIR__ . '/../includes/admin-header.php';
 
+use App\Audit\AuditLogger;
 use App\Reviews\ReviewRepository;
+use App\Support\Auth;
 use App\Support\Csrf;
 use App\Support\Flash;
 use App\Support\Http;
@@ -31,11 +33,14 @@ if (Http::isPost()) {
         Flash::error('That review no longer exists.');
     } elseif ($action === 'hide') {
         $repository->setStatus($reviewId, 'hidden');
+        (new AuditLogger())->log((int) Auth::id(), 'review.hidden', 'review', $reviewId);
         Flash::success('Review hidden.');
     } elseif ($action === 'show') {
         $repository->setStatus($reviewId, 'visible');
+        (new AuditLogger())->log((int) Auth::id(), 'review.restored', 'review', $reviewId);
         Flash::success('Review restored.');
     } elseif ($action === 'delete') {
+        (new AuditLogger())->log((int) Auth::id(), 'review.deleted', 'review', $reviewId);
         $repository->delete($reviewId);
         Flash::success('Review deleted.');
     }

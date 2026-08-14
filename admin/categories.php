@@ -19,7 +19,9 @@ declare(strict_types=1);
 $pageTitle = 'Categories';
 require_once __DIR__ . '/../includes/admin-header.php';
 
+use App\Audit\AuditLogger;
 use App\Catalog\CategoryRepository;
+use App\Support\Auth;
 use App\Support\Csrf;
 use App\Support\Flash;
 use App\Support\Http;
@@ -49,6 +51,7 @@ if (Http::isPost()) {
 
             $repository->delete($categoryId);
             Logger::info('Category deleted', ['category_id' => $categoryId]);
+            (new AuditLogger())->log((int) Auth::id(), 'category.deleted', 'category', $categoryId, ['affected_products' => $affected]);
 
             Flash::success(sprintf(
                 '"%s" deleted.%s',
@@ -91,10 +94,12 @@ if (Http::isPost()) {
         if ($isUpdate) {
             $repository->update($categoryId, $old['name'], $description);
             Logger::info('Category updated', ['category_id' => $categoryId]);
+            (new AuditLogger())->log((int) Auth::id(), 'category.updated', 'category', $categoryId, ['name' => $old['name']]);
             Flash::success('Category updated.');
         } else {
             $newId = $repository->create($old['name'], $description);
             Logger::info('Category created', ['category_id' => $newId]);
+            (new AuditLogger())->log((int) Auth::id(), 'category.created', 'category', $newId, ['name' => $old['name']]);
             Flash::success('Category created.');
         }
 

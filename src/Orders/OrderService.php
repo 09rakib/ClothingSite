@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Orders;
 
 use App\Account\AddressRepository;
+use App\Audit\AuditLogger;
+use App\Inventory\InventoryRepository;
 use App\Payments\PaymentGatewayFactory;
 use App\Payments\PaymentRequest;
 use App\Payments\PaymentStatus;
@@ -43,6 +45,8 @@ final class OrderService
     private OrderRepository $orders;
     private AddressRepository $addresses;
     private PaymentTransactionRepository $transactions;
+    private InventoryRepository $inventory;
+    private AuditLogger $audit;
 
     public function __construct(?mysqli $db = null)
     {
@@ -50,6 +54,8 @@ final class OrderService
         $this->orders       = new OrderRepository($this->db);
         $this->addresses    = new AddressRepository($this->db);
         $this->transactions = new PaymentTransactionRepository($this->db);
+        $this->inventory    = new InventoryRepository($this->db);
+        $this->audit        = new AuditLogger($this->db);
     }
 
     /**
@@ -216,6 +222,17 @@ final class OrderService
                     throw new RuntimeException("\"{$line['product_name']}\" just went out of stock. Please try again.");
                 }
 
+                // Ledger entry alongside the stock decrement already just
+                // performed above (§10 "stock deduction" as a tracked event,
+                // not only a number that silently changed).
+                $this->inventory->recordMovement(
+                    $line['product_id'],
+                    -$line['quantity'],
+                    'sale',
+                    null,
+                    $reference
+                );
+
                 $placed[] = $line;
             }
             $stockStmt->close();
@@ -305,17 +322,71 @@ final class OrderService
      */
     public function updateStatus(int $orderId, string $newStatus, int $adminUserId, ?string $note = null): void
     {
+        $before = $this->orders->find($orderId);
+        $fromStatus = $before !== null ? (string) $before['status'] : null;
+
         $this->orders->transitionStatus($orderId, $newStatus, $adminUserId, $note);
 
         if ($newStatus === OrderStatus::DELIVERED || $newStatus === OrderStatus::REFUNDED) {
             $this->settlePaymentForStatus($orderId, $newStatus);
         }
 
+        if ($newStatus === OrderStatus::RETURNED) {
+            $this->restockReturnedOrder($orderId);
+        }
+
+        $this->audit->log($adminUserId, 'order.status_changed', 'order', $orderId, [
+            'from' => $fromStatus,
+            'to'   => $newStatus,
+            'note' => $note,
+        ]);
+
         Logger::info('Order status changed', [
             'order_id' => $orderId,
             'to'       => $newStatus,
             'admin_id' => $adminUserId,
         ]);
+    }
+
+    /**
+     * Restock every item of a returned order (§10 "Stock return").
+     *
+     * A restock failure is logged but never rolls back the status change
+     * itself — same reasoning as settlePaymentForStatus: the admin's action
+     * already committed, and a secondary bookkeeping failure must not undo it.
+     * A mismatch here is a reconciliation task, not a reason to trap the order
+     * in an inconsistent status.
+     */
+    private function restockReturnedOrder(int $orderId): void
+    {
+        try {
+            $order = $this->orders->find($orderId);
+            $items = $this->orders->itemsFor($orderId);
+
+            if ($order === null || $items === []) {
+                return;
+            }
+
+            $reference = (string) $order['order_reference'];
+
+            Database::transaction(function (mysqli $db) use ($items, $reference): void {
+                $stockStmt = $db->prepare('UPDATE products SET stock = stock + ? WHERE id = ?');
+
+                foreach ($items as $item) {
+                    $productId = (int) $item['product_id'];
+                    $quantity  = (int) $item['quantity'];
+
+                    $stockStmt->bind_param('ii', $quantity, $productId);
+                    $stockStmt->execute();
+
+                    $this->inventory->recordMovement($productId, $quantity, 'return', null, $reference);
+                }
+
+                $stockStmt->close();
+            });
+        } catch (Throwable $e) {
+            Logger::error('Restock after return failed', ['order_id' => $orderId, 'error' => $e->getMessage()]);
+        }
     }
 
     /**

@@ -1150,15 +1150,58 @@ gating login on it isn't safe yet.
 
 ## Phase 6 --- Admin & Operations
 
--   [ ] User management.
--   [ ] Category management.
--   [ ] Inventory management.
--   [ ] Stock movement history.
--   [ ] Staff roles/permissions.
--   [ ] Review moderation.
--   [ ] Contact/support inbox.
--   [ ] Blog CMS.
--   [ ] Audit logs.
+**STATUS: COMPLETE except Staff roles/permissions, deliberately kept minimal
+(2026-08-14)**
+
+-   [x] User management. --- `admin/users.php`: search, suspend/reactivate
+    (blocks login, never deletes — preserves order history), promote/demote
+    admin. **Safety rule**: the store can never be left with zero active
+    admins — suspending or demoting the last one is refused, checked against
+    active admins only (a suspended admin does not count).
+-   [x] Category management. --- Delivered in Phase 1.
+-   [x] Inventory management. --- `admin/inventory.php`: current stock per
+    product plus a manual adjustment form that **requires a reason** and
+    refuses to take stock negative.
+-   [x] Stock movement history. --- `inventory_movements` ledger (§10):
+    every sale (at checkout), every return (on the Returned status
+    transition, which now also restocks the items), and every manual
+    adjustment writes one row. `products.stock` stays the fast-read current
+    value; this table answers "why is it that number."
+-   [~] Staff roles/permissions. --- **Kept intentionally minimal.** §17
+    itself says: "If only two roles are currently needed, keep the database
+    architecture extensible but do not add unnecessary complexity." This
+    store has exactly two roles with real distinct needs (customer, admin);
+    building a permissions matrix, a `permissions` table, and a
+    `role_permissions` join for staff tiers nobody has asked for would be
+    exactly the complexity §17 warns against adding without a need. The
+    `users.role` ENUM is trivially extensible (add a value, add checks) when
+    a real Staff/Manager requirement appears.
+-   [x] Review moderation. --- Delivered in Phase 5.
+-   [x] Contact/support inbox. --- `admin/contacts.php`. `contact_messages`
+    has existed and been genuinely written to since Phase 0
+    (`contact.php` never faked success) — this is the missing other half:
+    list, filter by status, and progress
+    new → in_progress → resolved/closed.
+-   [x] Blog CMS. --- `blog_posts` table, `BlogRepository`, admin
+    create/edit/publish/draft (`admin/blog.php`), public listing and detail
+    pages (`blog.php`, `blogpost.php`) replacing the hardcoded array that
+    existed since before Phase 0. Draft posts are genuinely inaccessible
+    (404) at their public URL, not merely hidden from the listing.
+-   [x] Audit logs. --- `audit_logs` table + `AuditLogger` (§23), separate
+    from the technical `storage/logs/*.log` files per §23's own distinction.
+    Wired into every business-significant admin action: order status
+    changes, product create/update/archive/restore, category
+    create/update/delete, review hide/restore/delete, user
+    suspend/reactivate/role-change, blog post create/update/delete.
+    Viewable at `admin/auditlog.php`, filterable by entity type.
+
+### A genuine behavioural change this phase made: returns now restock
+
+Before this phase, marking an order Returned changed its status but left
+`products.stock` untouched — a returned item vanished from inventory
+entirely. `OrderService::updateStatus()` now restocks every line item when an
+order moves to Returned, logging an `inventory_movements` row for each,
+verified in `InventoryTest`.
 
 ## Phase 7 --- Analytics & Growth
 

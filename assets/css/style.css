@@ -1422,3 +1422,71 @@ textarea:focus-visible {
 @media (max-width: 640px) {
     .review-item-date { margin-left: 0; }
 }
+
+/* =========================================================
+   Phase 6 additions — inventory, users, contact inbox, blog, audit
+   ========================================================= */
+
+/* ---------- Inventory ---------- */
+.inventory-adjust-form {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin: 0;
+    flex-wrap: wrap;
+}
+
+.movement-list { display: flex; flex-direction: column; gap: 12px; }
+.movement-item { font-size: 13.5px; border-bottom: 1px solid var(--color-border); padding-bottom: 10px; }
+.movement-item:last-child { border-bottom: none; }
+
+.movement-positive { color: var(--color-success-dark); font-weight: 700; }
+.movement-negative { color: var(--color-danger); font-weight: 700; }
+
+/* ---------- Contact inbox ---------- */
+.contact-inbox { display: flex; flex-direction: column; gap: 16px; }
+
+.contact-message-card { max-width: none; }
+
+.contact-status-form {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-border);
+}
+.contact-status-form select {
+    padding: 7px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 13.5px;
+}
+
+/* ---------- Blog ---------- */
+.blog-card-link { display: block; text-decoration: none; color: inherit; }
+.blog-card-link:hover h3 { color: var(--color-primary); }
+
+.blog-card-image {
+    width: 100%;
+    aspect-ratio: 16/9;
+    object-fit: cover;
+    border-radius: 8px;
+    margin-bottom: 10px;
+}
+
+.blog-post-image {
+    width: 100%;
+    max-height: 380px;
+    object-fit: cover;
+    border-radius: var(--radius);
+    margin-bottom: 20px;
+}
+
+.blog-post-body {
+    line-height: 1.8;
+    color: var(--color-text);
+    font-size: 15.5px;
+}
+
+.container-narrow.container { max-width: 760px; margin: 0 auto; }
