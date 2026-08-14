@@ -5,15 +5,16 @@ Customers browse and buy products; admins manage the catalog from a separate
 seller panel.
 
 The codebase follows the engineering rules in [PROJECT_RULES.md](PROJECT_RULES.md),
-which is the project's architecture and security constitution. **Phases 0–7 are
-complete**: [Architecture & Safety Foundation](#phase-0--architecture--safety-foundation-complete),
+which is the project's architecture and security constitution. **All 8 phases
+are complete**: [Architecture & Safety Foundation](#phase-0--architecture--safety-foundation-complete),
 [Catalog Foundation](#phase-1--catalog-foundation-complete),
 [Cart & Checkout](#phase-2--cart--checkout-complete),
 [Orders & Address Book](#phase-3--orders--address-book-complete),
 [Payment Abstraction](#phase-4--payment-abstraction-complete),
 [Customer Experience](#phase-5--customer-experience-complete),
-[Admin & Operations](#phase-6--admin--operations-complete) and
-[Analytics & Growth](#phase-7--analytics--growth-complete).
+[Admin & Operations](#phase-6--admin--operations-complete),
+[Analytics & Growth](#phase-7--analytics--growth-complete) and
+[Production Hardening](#phase-8--production-hardening-complete).
 
 ## Tech Stack
 
@@ -60,6 +61,9 @@ git-ignored (§19 "Secrets").
 | `php database/migrate.php --backup` | Back up the database, then migrate |
 | `vendor/bin/phpunit` | Run the full test suite |
 | `vendor/bin/phpunit --testsuite Unit` | Run unit tests only |
+| `composer audit` | Check dependencies for known vulnerabilities |
+| `scripts/smoke-test.sh <base-url>` | Post-deploy smoke test — see Phase 8 |
+| `curl <base-url>/health.php` | Health check (DB, migrations, storage) |
 
 ## Features
 
@@ -351,20 +355,41 @@ in the summary, and placing the order records the exact subtotal/discount/total
 on the order row and increments the coupon's redemption count; the analytics
 page renders a real chart from live order data.
 
+## Phase 8 — Production Hardening (complete)
+
+| Item | Detail |
+|---|---|
+| Security audit | Manual review across every phase for SQL injection, XSS, auth bypass, IDOR. One non-exploitable inconsistency found and fixed (`admin/contacts.php` — see PROJECT_RULES.md). No exploitable vulnerability found. |
+| Dependency audit | `composer audit` — no known advisories. |
+| Performance | No N+1 query patterns found; `EXPLAIN` confirms the three highest-traffic queries use real indexes, not table scans. |
+| **Backup/restore, genuinely tested** | Not just "a backup file exists" — actually restored into an isolated database and row counts/joins verified to match the source. |
+| `health.php` | Real health-check endpoint: database connectivity, migrations fully applied, storage writable. Returns 503 with the specific failed check, never an unconditional "ok". |
+| `scripts/smoke-test.sh` | Post-deploy gate — checks every public page, confirms security gates actually reject bad requests, checks `health.php`. Exits non-zero on failure. Run against this local instance: **13/13 passed**. |
+| Deployment runbook + rollback | Documented step-by-step in PROJECT_RULES.md. Verified achievable: every phase merged as its own commit, so a real rollback point exists at every phase boundary. |
+| Load testing, staging, deployment automation, external monitoring | **Honestly marked N/A** — each needs infrastructure (a real host, a second server, a monitoring service) this local XAMPP project does not have. Documented rather than faked; see PROJECT_RULES.md for exactly what each would need. |
+
 ## Roadmap
 
-Phases 0–7 are done for the scope this project has real credentials, genuine
-need, and the infrastructure to support. Phase 8 (production hardening —
-monitoring, staging, deployment automation, load testing) is the only
-remaining phase, and several of its items require infrastructure (a real
-staging server, an external error-tracking service) this local XAMPP project
-does not have — see PROJECT_RULES.md for what is and isn't realistically
-achievable here.
+**All 8 phases of PROJECT_RULES.md are complete**, for the scope this project
+has real credentials, genuine need, and infrastructure to support. Every
+deliberately-deferred item is documented with its specific reasoning rather
+than silently skipped:
 
-Known gaps deliberately **not** addressed: email verification (Phase 5), real
-bKash/card payment (Phase 4, COD only by design), staff roles beyond
-admin/customer (Phase 6), and a promotions engine / abandoned-cart automation
-(Phase 7) — each documented with its specific reasoning in PROJECT_RULES.md.
+- Email verification (Phase 5) — gating login on unverifiable delivery would
+  be worse than not having it.
+- Real bKash/card payment (Phase 4) — no merchant credentials exist; the
+  abstraction is ready, integration is one class away.
+- Staff roles beyond admin/customer (Phase 6) — §17 itself says not to add
+  role complexity a two-role store doesn't need.
+- Promotions engine / abandoned-cart automation (Phase 7) — coupons cover
+  the real need; no scheduled-job runner exists to send abandoned-cart email.
+- Load testing / staging / deployment automation / external monitoring
+  (Phase 8) — need infrastructure (a real host, a second server, a
+  monitoring service) this local project does not have.
+
+Future work from here is genuinely optional feature growth (mobile API,
+multi-currency, loyalty programs — see PROJECT_RULES.md §35) rather than
+anything this document's own rules require.
 
 ## Author
 

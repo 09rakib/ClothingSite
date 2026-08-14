@@ -46,12 +46,19 @@ if (Http::isPost()) {
 $statusFilter = (string) ($_GET['status'] ?? '');
 $allowedStatuses = ['new', 'in_progress', 'resolved', 'closed'];
 
-$where = '';
+// Prepared statement even though $statusFilter is already whitelist-checked
+// below — kept consistent with every other query in this codebase rather
+// than relying solely on the whitelist as the only safeguard (§19 "Continue
+// prepared statements").
 if (in_array($statusFilter, $allowedStatuses, true)) {
-    $where = "WHERE status = '" . $conn->real_escape_string($statusFilter) . "'";
+    $stmt = $conn->prepare('SELECT * FROM contact_messages WHERE status = ? ORDER BY created_at DESC');
+    $stmt->bind_param('s', $statusFilter);
+} else {
+    $stmt = $conn->prepare('SELECT * FROM contact_messages ORDER BY created_at DESC');
 }
-
-$messages = $conn->query("SELECT * FROM contact_messages {$where} ORDER BY created_at DESC")->fetch_all(MYSQLI_ASSOC);
+$stmt->execute();
+$messages = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$stmt->close();
 
 $counts = $conn->query('SELECT status, COUNT(*) AS c FROM contact_messages GROUP BY status')->fetch_all(MYSQLI_ASSOC);
 $countByStatus = array_fill_keys($allowedStatuses, 0);
